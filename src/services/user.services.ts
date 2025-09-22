@@ -7,128 +7,141 @@ import { CreateUserDto } from '../dtos/createuser.dto';
 import { UpdateUserDto } from '../dtos/updateuser.dto';
 import { Post } from '../entities/post.entity';
 import { Comment } from '../entities/comment.entity';
+import { InjectQueue } from '@nestjs/bull';
+import { type Queue } from 'bull';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectRepository(User)
-    private usersRepository: Repository<User>,
+    constructor(
+        @InjectRepository(User)
+        private usersRepository: Repository<User>,
 
-    @InjectRepository(Post)
-    private postsRepository: Repository<Post>,
+        @InjectRepository(Post)
+        private postsRepository: Repository<Post>,
 
-    @InjectRepository(Comment)
-    private commentsRepository: Repository<Comment>,
-  ) {}
+        @InjectRepository(Comment)
+        private commentsRepository: Repository<Comment>,
 
-  /** Create a new user using CreateUserDto */
-  async create(createUserDto: CreateUserDto): Promise<User> {
-    const { password, ...rest } = createUserDto;
+        @InjectQueue('email-queue')
+        private readonly emailQueue: Queue,
+    ) { }
 
-    // Hash the password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    async create(createUserDto: CreateUserDto): Promise<User> {
+        const { password, ...rest } = createUserDto;
 
-    const user = this.usersRepository.create({
-      ...rest,
-      password: hashedPassword,
-    });
+        // Hash the password
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-    return this.usersRepository.save(user);
-  }
+        const user = this.usersRepository.create({
+            ...rest,
+            password: hashedPassword,
+        });
 
-  /** Fetch all users */
-  async findAll(): Promise<User[]> {
-    return this.usersRepository.find({ relations: ['followers', 'following'] });
-  }
+        const savedUser = await this.usersRepository.save(user);
+        console.log('queuing email (user service)')
+        // 👇 queue welcome email
+        await this.emailQueue.add('send-email', {
+            to: savedUser.email,
+            username: savedUser.username,
+        });
 
-  /** Fetch single user by ID */
-  async findOne(id: string): Promise<User> {
-    const user = await this.usersRepository.findOne({
-      where: { id },
-      relations: ['followers', 'following', 'posts', 'comments'],
-    });
-    if (!user) throw new NotFoundException('User not found');
-    return user;
-  }
-
-  /** Fetch single user by email (for auth) */
-  async findByEmail(email: string): Promise<User | null> {
-    return this.usersRepository.findOne({ where: { email } });
-  }
-
-  /** Update user */
-  async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
-    const user = await this.findOne(id);
-
-    if (updateUserDto.password) {
-      updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+        return savedUser;
     }
 
-    Object.assign(user, updateUserDto);
-    return this.usersRepository.save(user);
-  }
 
-  /** Delete user */
-  async remove(id: string): Promise<void> {
-    const user = await this.findOne(id);
-    await this.usersRepository.remove(user);
-  }
+    /** Fetch all users */
+    async findAll(): Promise<User[]> {
+        return this.usersRepository.find({ relations: ['followers', 'following'] });
+    }
 
-  /** Fetch posts of a user */
-  async getPosts(id: string): Promise<Post[]> {
-    const user = await this.usersRepository.findOne({
-      where: { id },
-      relations: ['posts'],
-    });
-    if (!user) throw new NotFoundException('User not found');
-    return user.posts;
-  }
+    /** Fetch single user by ID */
+    async findOne(id: string): Promise<User> {
+        const user = await this.usersRepository.findOne({
+            where: { id },
+            relations: ['followers', 'following', 'posts', 'comments'],
+        });
+        if (!user) throw new NotFoundException('User not found');
+        return user;
+    }
 
-  /** Fetch comments of a user */
-  async getComments(id: string): Promise<Comment[]> {
-    const user = await this.usersRepository.findOne({
-      where: { id },
-      relations: ['comments'],
-    });
-    if (!user) throw new NotFoundException('User not found');
-    return user.comments;
-  }
+    /** Fetch single user by email (for auth) */
+    async findByEmail(email: string): Promise<User | null> {
+        return this.usersRepository.findOne({ where: { email } });
+    }
 
-  /** Fetch followers of a user */
-  async getFollowers(id: string): Promise<User[]> {
-    const user = await this.usersRepository.findOne({
-      where: { id },
-      relations: ['followers'],
-    });
-    if (!user) throw new NotFoundException('User not found');
-    return user.followers;
-  }
+    /** Update user */
+    async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
+        const user = await this.findOne(id);
 
-  /** Fetch following of a user */
-  async getFollowing(id: string): Promise<User[]> {
-    const user = await this.usersRepository.findOne({
-      where: { id },
-      relations: ['following'],
-    });
-    if (!user) throw new NotFoundException('User not found');
-    return user.following;
-  }
+        if (updateUserDto.password) {
+            updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+        }
 
-  /** Follow another user */
-  async follow(userId: string, targetUserId: string): Promise<void> {
-    const user = await this.findOne(userId);
-    const target = await this.findOne(targetUserId);
+        Object.assign(user, updateUserDto);
+        return this.usersRepository.save(user);
+    }
 
-    if (!user.following) user.following = [];
-    user.following.push(target);
+    /** Delete user */
+    async remove(id: string): Promise<void> {
+        const user = await this.findOne(id);
+        await this.usersRepository.remove(user);
+    }
 
-    await this.usersRepository.save(user);
-  }
+    /** Fetch posts of a user */
+    async getPosts(id: string): Promise<Post[]> {
+        const user = await this.usersRepository.findOne({
+            where: { id },
+            relations: ['posts'],
+        });
+        if (!user) throw new NotFoundException('User not found');
+        return user.posts;
+    }
 
-  /** Unfollow a user */
-  async unfollow(userId: string, targetUserId: string): Promise<void> {
-    const user = await this.findOne(userId);
-    user.following = user.following.filter(f => f.id !== targetUserId);
-    await this.usersRepository.save(user);
-  }
+    /** Fetch comments of a user */
+    async getComments(id: string): Promise<Comment[]> {
+        const user = await this.usersRepository.findOne({
+            where: { id },
+            relations: ['comments'],
+        });
+        if (!user) throw new NotFoundException('User not found');
+        return user.comments;
+    }
+
+    /** Fetch followers of a user */
+    async getFollowers(id: string): Promise<User[]> {
+        const user = await this.usersRepository.findOne({
+            where: { id },
+            relations: ['followers'],
+        });
+        if (!user) throw new NotFoundException('User not found');
+        return user.followers;
+    }
+
+    /** Fetch following of a user */
+    async getFollowing(id: string): Promise<User[]> {
+        const user = await this.usersRepository.findOne({
+            where: { id },
+            relations: ['following'],
+        });
+        if (!user) throw new NotFoundException('User not found');
+        return user.following;
+    }
+
+    /** Follow another user */
+    async follow(userId: string, targetUserId: string): Promise<void> {
+        const user = await this.findOne(userId);
+        const target = await this.findOne(targetUserId);
+
+        if (!user.following) user.following = [];
+        user.following.push(target);
+
+        await this.usersRepository.save(user);
+    }
+
+    /** Unfollow a user */
+    async unfollow(userId: string, targetUserId: string): Promise<void> {
+        const user = await this.findOne(userId);
+        user.following = user.following.filter(f => f.id !== targetUserId);
+        await this.usersRepository.save(user);
+    }
 }

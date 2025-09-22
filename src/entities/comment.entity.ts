@@ -7,8 +7,8 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { User } from '../entities/user.entity';
-import { Post } from '../entities/post.entity';
+import { User } from './user.entity';
+import { Post } from './post.entity';
 
 @Entity('comments')
 export class Comment {
@@ -18,15 +18,19 @@ export class Comment {
   @Column({ type: 'text' })
   content: string;
 
+  /** Author of the comment */
   @ManyToOne(() => User, user => user.comments, { onDelete: 'CASCADE' })
   user: User;
 
+  /** Post the comment belongs to */
   @ManyToOne(() => Post, post => post.comments, { onDelete: 'CASCADE' })
   post: Post;
 
-  @OneToMany(() => Comment, comment => comment.parent)
+  /** Replies to this comment */
+  @OneToMany(() => Comment, comment => comment.parent, { cascade: true })
   replies: Comment[];
 
+  /** Parent comment (for replies) */
   @ManyToOne(() => Comment, comment => comment.replies, { nullable: true, onDelete: 'CASCADE' })
   parent: Comment;
 

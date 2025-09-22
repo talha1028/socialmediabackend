@@ -1,21 +1,23 @@
-import { 
-  Entity, 
-  PrimaryGeneratedColumn, 
-  Column, 
-  CreateDateColumn, 
-  UpdateDateColumn, 
-  ManyToMany, 
-  OneToMany, 
-  JoinTable 
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToMany,
+  OneToMany,
+  JoinTable
 } from 'typeorm';
 import { Like } from './like.entity';
 import { Post } from './post.entity';
 import { Comment } from './comment.entity';
+
 export enum UserRole {
   USER = 1,
   ADMIN = 2,
   SUPERADMIN = 3,
 }
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -44,9 +46,15 @@ export class User {
 
   @Column({ nullable: true })
   lastName: string;
-  
-  @OneToMany(() => Like, like => like.user)
+
+  @OneToMany(() => Like, like => like.user, { cascade: true })
   likes: Like[];
+
+  @OneToMany(() => Post, post => post.user, { cascade: true })
+  posts: Post[];
+
+  @OneToMany(() => Comment, comment => comment.user, { cascade: true })
+  comments: Comment[];
 
   @Column({ nullable: true })
   bio: string;
@@ -57,7 +65,7 @@ export class User {
   @Column({ nullable: true })
   coverPhotoUrl: string;
 
-  @ManyToMany(() => User)
+  @ManyToMany(() => User, user => user.following)
   @JoinTable({
     name: 'followers',
     joinColumn: { name: 'following_id', referencedColumnName: 'id' },
@@ -65,14 +73,9 @@ export class User {
   })
   followers: User[];
 
-  @ManyToMany(() => User)
+  @ManyToMany(() => User, user => user.followers)
   following: User[];
 
-  @OneToMany(() => Post, post => post.user)
-  posts: Post[];
-
-  @OneToMany(() => Comment, comment => comment.user)
-  comments: Comment[];
 
   @Column({ nullable: true })
   refreshToken: string;

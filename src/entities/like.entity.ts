@@ -4,17 +4,19 @@ import {
   ManyToOne,
   CreateDateColumn,
 } from 'typeorm';
-import { User } from '../entities/user.entity';
-import { Post } from '../entities/post.entity';
+import { User } from './user.entity';
+import { Post } from './post.entity';
 
 @Entity('likes')
 export class Like {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  /** The user who liked the post */
   @ManyToOne(() => User, user => user.likes, { onDelete: 'CASCADE' })
   user: User;
 
+  /** The post that was liked */
   @ManyToOne(() => Post, post => post.likes, { onDelete: 'CASCADE' })
   post: Post;
 

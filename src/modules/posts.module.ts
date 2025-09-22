@@ -10,5 +10,6 @@ import { Like } from '../entities/like.entity';
   imports: [TypeOrmModule.forFeature([Post, User, Comment, Like])],
   providers: [PostsService],
   exports: [PostsService],
+  
 })
 export class PostsModule {}

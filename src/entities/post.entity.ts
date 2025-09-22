@@ -7,9 +7,9 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { User } from '../entities/user.entity';
-import { Comment } from '../entities/comment.entity';
-import { Like } from '../entities/like.entity';
+import { User } from './user.entity';
+import { Comment } from './comment.entity';
+import { Like } from './like.entity';
 
 @Entity('posts')
 export class Post {
@@ -22,13 +22,16 @@ export class Post {
   @Column({ nullable: true })
   mediaUrl: string; // URL of image/video
 
+  /** The user who created the post */
   @ManyToOne(() => User, user => user.posts, { onDelete: 'CASCADE' })
   user: User;
 
-  @OneToMany(() => Comment, comment => comment.post)
+  /** Comments on this post — deleted when post is deleted */
+  @OneToMany(() => Comment, comment => comment.post, { cascade: true })
   comments: Comment[];
 
-  @OneToMany(() => Like, like => like.post)
+  /** Likes on this post — deleted when post is deleted */
+  @OneToMany(() => Like, like => like.post, { cascade: true })
   likes: Like[];
 
   @CreateDateColumn()
