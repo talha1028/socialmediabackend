@@ -1,147 +1,254 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as bcrypt from 'bcrypt';
+import { EmailService } from './email.service';
 import { User } from '../entities/user.entity';
 import { CreateUserDto } from '../dtos/createuser.dto';
 import { UpdateUserDto } from '../dtos/updateuser.dto';
 import { Post } from '../entities/post.entity';
 import { Comment } from '../entities/comment.entity';
-import { InjectQueue } from '@nestjs/bull';
-import { type Queue } from 'bull';
+import { VerifyOtpDto } from 'src/dtos/verifyotp.dto';
 
 @Injectable()
 export class UsersService {
-    constructor(
-        @InjectRepository(User)
-        private usersRepository: Repository<User>,
+  constructor(
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
 
-        @InjectRepository(Post)
-        private postsRepository: Repository<Post>,
+    @InjectRepository(Post)
+    private postsRepository: Repository<Post>,
 
-        @InjectRepository(Comment)
-        private commentsRepository: Repository<Comment>,
+    @InjectRepository(Comment)
+    private commentsRepository: Repository<Comment>,
 
-        @InjectQueue('email-queue')
-        private readonly emailQueue: Queue,
-    ) { }
+    private readonly emailService: EmailService,
+  ) { }
 
-    async create(createUserDto: CreateUserDto): Promise<User> {
-        const { password, ...rest } = createUserDto;
+  /** Create a new user with email verification */
+  async create(createUserDto: CreateUserDto): Promise<User> {
+    // 1️⃣ Generate OTP and expiry
+    const otp = Math.floor(100000 + Math.random() * 900000);
+    const codeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-        // Hash the password
-        const hashedPassword = await bcrypt.hash(password, 10);
+    // 2️⃣ Create user entity
+    const user = this.usersRepository.create({
+      ...createUserDto,
+      isApproved: false,
+      verificationCode: otp,
+      codeExpiresAt,
+    });
 
-        const user = this.usersRepository.create({
-            ...rest,
-            password: hashedPassword,
-        });
+    // 3️⃣ Save to database
+    const savedUser = await this.usersRepository.save(user);
 
-        const savedUser = await this.usersRepository.save(user);
-        console.log('queuing email (user service)')
-        // 👇 queue welcome email
-        await this.emailQueue.add('send-email', {
-            to: savedUser.email,
-            username: savedUser.username,
-        });
+    // 4️⃣ Send verification email
+    await this.emailService.sendOtpEmail(savedUser.email, savedUser.username, otp);
 
-        return savedUser;
+    return savedUser;
+  }
+
+  /** Fetch all users */
+  async findAll(): Promise<User[]> {
+    return this.usersRepository.find({ relations: ['followers', 'following'] });
+  }
+
+  /** Fetch single user by ID */
+  async findOne(id: number): Promise<User> {
+    const user = await this.usersRepository.findOne({
+      where: { id },
+      relations: ['followers', 'following', 'posts', 'comments'],
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  /** Fetch single user by email (for auth) */
+  async findByEmail(email: string): Promise<User | null> {
+    return this.usersRepository.findOneBy({ email });
+  }
+
+  /** Update user */
+  async update(id: number, updateUserDto: UpdateUserDto): Promise<User> {
+    const user = await this.findOne(id);
+    Object.assign(user, updateUserDto);
+    return this.usersRepository.save(user);
+  }
+
+  /** Update Last Login */
+
+  async updatelastlogin(userId: number) {
+    await this.usersRepository.update(userId, { lastLogin: new Date() });
+  }
+
+  /** Delete user */
+  async remove(id: number): Promise<void> {
+    const user = await this.findOne(id);
+    await this.usersRepository.remove(user);
+  }
+
+  async verifyOtp(verifyOtpDto: VerifyOtpDto): Promise<boolean> {
+    const { email, otp } = verifyOtpDto;
+
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (!user.codeExpiresAt || user.codeExpiresAt < new Date()) {
+      throw new UnauthorizedException('OTP expired or not set');
     }
 
-
-    /** Fetch all users */
-    async findAll(): Promise<User[]> {
-        return this.usersRepository.find({ relations: ['followers', 'following'] });
+    if (user.verificationCode !== Number(otp)) {
+      throw new BadRequestException('Invalid OTP');
     }
 
-    /** Fetch single user by ID */
-    async findOne(id: string): Promise<User> {
-        const user = await this.usersRepository.findOne({
-            where: { id },
-            relations: ['followers', 'following', 'posts', 'comments'],
-        });
-        if (!user) throw new NotFoundException('User not found');
-        return user;
+    user.isApproved = true;
+    await this.usersRepository.save(user);
+    return true;
+  }
+
+  async resendOtp(email: string): Promise<void> {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (user.isApproved) {
+      throw new BadRequestException('User already verified');
     }
 
-    /** Fetch single user by email (for auth) */
-    async findByEmail(email: string): Promise<User | null> {
-        return this.usersRepository.findOne({ where: { email } });
+    // 1️⃣ Generate new OTP & expiry
+    const otp = Math.floor(100000 + Math.random() * 900000);
+    user.verificationCode = otp;
+    user.codeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await this.usersRepository.save(user);
+
+    // 2️⃣ Send email
+    await this.emailService.sendOtpEmail(user.email, user.username, otp);
+  }
+  
+    async updateAvatar(userId: number, filename: string): Promise<string> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    // build a URL or relative path
+    const avatarUrl = `/uploads/avatars/${filename}`;
+    user.avatarUrl = avatarUrl;
+
+    await this.usersRepository.save(user);
+    return avatarUrl;
+  }
+  
+  
+
+  /** Fetch posts of a user */
+  async getPosts(id: number): Promise<Post[]> {
+    const user = await this.usersRepository.findOne({
+      where: { id },
+      relations: ['posts'],
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return user.posts;
+  }
+
+  /** Fetch comments of a user */
+  async getComments(id: number): Promise<Comment[]> {
+    const user = await this.usersRepository.findOne({
+      where: { id },
+      relations: ['comments'],
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return user.comments;
+  }
+
+  /** Fetch followers of a user */
+  async getFollowers(id: number) {
+    const user = await this.usersRepository.findOne({
+      where: { id },
+      relations: ['followers'],
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    // pick only safe fields
+    return user.followers.map(follower => ({
+      username: follower.username,
+      firstName: follower.firstName,
+      lastName: follower.lastName,
+      bio: follower.bio,
+    }));
+  }
+
+
+  /** Fetch following of a user */
+  async getFollowing(id: number) {
+    const user = await this.usersRepository.findOne({
+      where: { id },
+      relations: ['following'],
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    // return only safe fields
+    return user.following.map(following => ({
+      username: following.username,
+      firstName: following.firstName,
+      lastName: following.lastName,
+      bio: following.bio,
+    }));
+  }
+
+  async follow(userId: number, targetUserId: number): Promise<void> {
+    if (userId === targetUserId) {
+      throw new BadRequestException('You cannot follow yourself.');
     }
 
-    /** Update user */
-    async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
-        const user = await this.findOne(id);
+    const user = await this.findOne(userId);
+    const target = await this.findOne(targetUserId);
 
-        if (updateUserDto.password) {
-            updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
-        }
-
-        Object.assign(user, updateUserDto);
-        return this.usersRepository.save(user);
+    if (!user || !target) {
+      throw new NotFoundException('User or target user not found.');
     }
 
-    /** Delete user */
-    async remove(id: string): Promise<void> {
-        const user = await this.findOne(id);
-        await this.usersRepository.remove(user);
+    if (user.following?.some((f) => f.id === targetUserId)) {
+      throw new BadRequestException(`You are already following user ${targetUserId}.`);
     }
 
-    /** Fetch posts of a user */
-    async getPosts(id: string): Promise<Post[]> {
-        const user = await this.usersRepository.findOne({
-            where: { id },
-            relations: ['posts'],
-        });
-        if (!user) throw new NotFoundException('User not found');
-        return user.posts;
+    user.following = user.following || [];
+    user.following.push(target);
+
+    await this.usersRepository.save(user);
+
+    // 📩 Optional: send notification email to the target user
+    // await this.emailService.sendNotificationEmail(
+    //   target.email,
+    //   '👥 New Follower!',
+    //   `${user.username} started following you.`
+    // );
+  }
+
+  /** Unfollow a user */
+  async unfollow(userId: number, targetUserId: number): Promise<void> {
+    const user = await this.findOne(userId);
+    if (!user) throw new NotFoundException('User not found.');
+
+    if (!user.following?.some((f) => f.id === targetUserId)) {
+      throw new BadRequestException(`You are not following user ${targetUserId}.`);
     }
 
-    /** Fetch comments of a user */
-    async getComments(id: string): Promise<Comment[]> {
-        const user = await this.usersRepository.findOne({
-            where: { id },
-            relations: ['comments'],
-        });
-        if (!user) throw new NotFoundException('User not found');
-        return user.comments;
-    }
+    user.following = user.following.filter((f) => f.id !== targetUserId);
 
-    /** Fetch followers of a user */
-    async getFollowers(id: string): Promise<User[]> {
-        const user = await this.usersRepository.findOne({
-            where: { id },
-            relations: ['followers'],
-        });
-        if (!user) throw new NotFoundException('User not found');
-        return user.followers;
-    }
+    await this.usersRepository.save(user);
+  }
 
-    /** Fetch following of a user */
-    async getFollowing(id: string): Promise<User[]> {
-        const user = await this.usersRepository.findOne({
-            where: { id },
-            relations: ['following'],
-        });
-        if (!user) throw new NotFoundException('User not found');
-        return user.following;
-    }
+  async findByName(name: string): Promise<User[]> {
+    return this.usersRepository
+      .createQueryBuilder('user')
+      .where('user.firstName ILIKE :name OR user.lastName ILIKE :name', { name: `%${name}%` })
+      .getMany();
+  }
 
-    /** Follow another user */
-    async follow(userId: string, targetUserId: string): Promise<void> {
-        const user = await this.findOne(userId);
-        const target = await this.findOne(targetUserId);
 
-        if (!user.following) user.following = [];
-        user.following.push(target);
-
-        await this.usersRepository.save(user);
-    }
-
-    /** Unfollow a user */
-    async unfollow(userId: string, targetUserId: string): Promise<void> {
-        const user = await this.findOne(userId);
-        user.following = user.following.filter(f => f.id !== targetUserId);
-        await this.usersRepository.save(user);
-    }
 }

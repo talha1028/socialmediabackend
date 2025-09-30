@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Post } from '../entities/post.entity';
@@ -20,12 +20,15 @@ export class PostsService {
 
     @InjectRepository(Like)
     private likesRepository: Repository<Like>,
-  ) {}
+  ) { }
 
   /** Create a new post */
-  async create(userId: string, content: string, mediaUrl?: string): Promise<Post> {
+  async create(userId: number, content: string, mediaUrl: string): Promise<Post> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
+    if (!mediaUrl) {
+      throw new BadRequestException('Post must include media');
+    }
 
     const post = this.postsRepository.create({ content, mediaUrl, user });
     return this.postsRepository.save(post);
@@ -40,7 +43,7 @@ export class PostsService {
   }
 
   /** Fetch single post by ID */
-  async findOne(id: string): Promise<Post> {
+  async findOne(id: number): Promise<Post> {
     const post = await this.postsRepository.findOne({
       where: { id },
       relations: ['user', 'comments', 'likes'],
@@ -50,7 +53,7 @@ export class PostsService {
   }
 
   /** Update a post */
-  async update(id: string, content?: string, mediaUrl?: string): Promise<Post> {
+  async update(id: number, content?: string, mediaUrl?: string): Promise<Post> {
     const post = await this.findOne(id);
     if (content) post.content = content;
     if (mediaUrl) post.mediaUrl = mediaUrl;
@@ -58,13 +61,13 @@ export class PostsService {
   }
 
   /** Delete a post */
-  async remove(id: string): Promise<void> {
+  async remove(id: number): Promise<void> {
     const post = await this.findOne(id);
     await this.postsRepository.remove(post);
   }
 
   /** Add a like to a post */
-  async likePost(userId: string, postId: string): Promise<Like> {
+  async likePost(userId: number, postId: number): Promise<Like> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     const post = await this.findOne(postId);
     if (!user) throw new NotFoundException('User not found');
@@ -80,7 +83,7 @@ export class PostsService {
   }
 
   /** Remove like from a post */
-  async unlikePost(userId: string, postId: string): Promise<void> {
+  async unlikePost(userId: number, postId: number): Promise<void> {
     const like = await this.likesRepository.findOne({
       where: { user: { id: userId }, post: { id: postId } },
     });
@@ -88,7 +91,7 @@ export class PostsService {
   }
 
   /** Fetch comments for a post */
-  async getComments(postId: string): Promise<Comment[]> {
+  async getComments(postId: number): Promise<Comment[]> {
     const post = await this.findOne(postId);
     return post.comments;
   }

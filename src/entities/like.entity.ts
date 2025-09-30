@@ -9,8 +9,8 @@ import { Post } from './post.entity';
 
 @Entity('likes')
 export class Like {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn()
+  id: number;
 
   /** The user who liked the post */
   @ManyToOne(() => User, user => user.likes, { onDelete: 'CASCADE' })

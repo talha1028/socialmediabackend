@@ -10,16 +10,18 @@ import {
 import { User } from './user.entity';
 import { Comment } from './comment.entity';
 import { Like } from './like.entity';
+import { IsNotEmpty } from 'class-validator';
 
 @Entity('posts')
 export class Post {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn()
+  id: number;
 
   @Column({ type: 'text' })
   content: string;
 
-  @Column({ nullable: true })
+  @Column()
+  @IsNotEmpty()
   mediaUrl: string; // URL of image/video
 
   /** The user who created the post */

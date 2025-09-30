@@ -1,4 +1,5 @@
 export interface JwtPayload {
   id: string;
-  role: number; // Using numeric UserRole
+  role: number;
+  isApproved: boolean; 
 }

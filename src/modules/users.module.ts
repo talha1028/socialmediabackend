@@ -7,12 +7,14 @@ import { Post } from '../entities/post.entity';
 import { Comment } from '../entities/comment.entity';
 import { UsersController } from 'src/controllers/user.controller';
 import { EmailModule } from './email.module';
-import { BullConfigModule } from './bullconfig.module';
+import { MulterCustomModule } from './multer.module';
+
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Post, Comment]),
     EmailModule,
+    MulterCustomModule
   ],
   controllers: [UsersController],
   providers: [UsersService],

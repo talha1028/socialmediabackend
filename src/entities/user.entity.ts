@@ -20,8 +20,8 @@ export enum UserRole {
 
 @Entity('users')
 export class User {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn()
+  id: number;
 
   @Column({ unique: true })
   username: string;
@@ -37,9 +37,6 @@ export class User {
     default: UserRole.USER,
   })
   role: UserRole;
-
-  @Column({ default: true })
-  isActive: boolean;
 
   @Column({ nullable: true })
   firstName: string;
@@ -61,9 +58,6 @@ export class User {
 
   @Column({ nullable: true })
   avatarUrl: string;
-
-  @Column({ nullable: true })
-  coverPhotoUrl: string;
 
   @ManyToMany(() => User, user => user.following)
   @JoinTable({
@@ -88,4 +82,13 @@ export class User {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  @Column({ default: false })
+  isApproved: boolean;   // ✅ user can only log in if true
+
+  @Column({ nullable: true })
+  verificationCode: number;  // OTP sent to email
+
+  @Column({ nullable: true })
+  codeExpiresAt: Date;  // expiry time for OTP
 }

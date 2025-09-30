@@ -15,6 +15,7 @@ export class CreateUserDto {
   @IsString()
   @IsNotEmpty({ message: 'Password is required' })
   @MinLength(6, { message: 'Password must be at least 6 characters' })
+  @Matches(/\S/, { message: 'Last name cannot be empty or spaces only' })
   password: string;
 
   @IsString()
@@ -36,7 +37,4 @@ export class CreateUserDto {
   @IsString()
   avatarUrl?: string;
 
-  @IsOptional()
-  @IsString()
-  coverPhotoUrl?: string;
 }

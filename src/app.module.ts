@@ -9,6 +9,8 @@ import {  ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from './modules/db.module';
 import { BullConfigModule } from './modules/bullconfig.module';
 import { DataSource } from 'typeorm';
+import { SeedService } from './services/seeder.service';
+import { SeedModule } from './modules/seed.module';
 
 @Module({
   imports: [
@@ -20,7 +22,7 @@ import { DataSource } from 'typeorm';
         },
       ],
     }),
-    AuthModule,UsersModule,PostsModule,DatabaseModule,BullConfigModule
+    AuthModule,UsersModule,PostsModule,DatabaseModule,BullConfigModule,SeedModule
   ],
   controllers: [AppController],
   providers: [AppService],

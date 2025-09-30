@@ -1,28 +1,31 @@
+// src/multer/multer-custom.module.ts
 import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
+function ensureDir(path: string) {
+  if (!existsSync(path)) {
+    mkdirSync(path, { recursive: true });
+  }
+}
+
 @Module({
   imports: [
     MulterModule.register({
       storage: diskStorage({
         destination: (req, file, callback) => {
-          // Decide folder based on fieldname
           let uploadPath = join(__dirname, '..', '..', 'uploads', 'others');
 
-          if (file.fieldname === 'avatar') {
+          // Decide folder based on endpoint + fieldname
+          if (req.originalUrl.includes('/users') && file.fieldname === 'avatar') {
             uploadPath = join(__dirname, '..', '..', 'uploads', 'avatars');
-          } else if (file.fieldname === 'media') {
+          } else if (req.originalUrl.includes('/posts') && file.fieldname === 'media') {
             uploadPath = join(__dirname, '..', '..', 'uploads', 'media');
           }
 
-          // Ensure folder exists
-          if (!existsSync(uploadPath)) {
-            mkdirSync(uploadPath, { recursive: true });
-          }
-
+          ensureDir(uploadPath);
           callback(null, uploadPath);
         },
         filename: (req, file, callback) => {
@@ -31,6 +34,7 @@ import { existsSync, mkdirSync } from 'fs';
           callback(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
         },
       }),
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB default limit
     }),
   ],
   exports: [MulterModule],

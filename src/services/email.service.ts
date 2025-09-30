@@ -10,4 +10,15 @@ export class EmailService {
   async sendEmail(to: string, subject: string, body: string) {
     await this.emailQueue.add('send-email', { to, subject, body });
   }
+
+  async sendOtpEmail(to: string, username: string, otp: number) {
+    const subject = '🔑 Verify Your Account';
+    const body = `Hello ${username}, please use this OTP to verify your account: ${otp}`;
+    await this.sendEmail(to, subject, body);
+  }
+
+  // 📩 Helper for notifications
+  async sendNotificationEmail(to: string, subject: string, message: string) {
+    await this.sendEmail(to, subject, message);
+  }
 }

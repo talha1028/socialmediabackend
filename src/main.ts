@@ -9,29 +9,31 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
   );
 
   app.useStaticAssets(join(__dirname, '..', 'uploads'), { prefix: '/uploads/' });
 
-  
+  // ✅ Swagger configuration
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Social Media API')
     .setDescription('API documentation')
     .setVersion('1.0')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-      'access-token',
+      'access-token', // must match @ApiBearerAuth('access-token')
     )
     .build();
 
-  
-  const document = SwaggerModule.createDocument(app, AppModule as any, {
-    extraModels: [],        
-    deepScanRoutes: true,   
+  // ✅ use swaggerConfig here (NOT AppModule)
+  const document = SwaggerModule.createDocument(app, swaggerConfig, {
+    deepScanRoutes: true,
   });
 
-  
   SwaggerModule.setup('api-docs', app, document, {
     swaggerOptions: { persistAuthorization: true },
   });
