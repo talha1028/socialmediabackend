@@ -1,40 +1,28 @@
-// src/multer/multer-custom.module.ts
 import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-
-function ensureDir(path: string) {
-  if (!existsSync(path)) {
-    mkdirSync(path, { recursive: true });
-  }
-}
+import { join } from 'path';
 
 @Module({
   imports: [
     MulterModule.register({
       storage: diskStorage({
-        destination: (req, file, callback) => {
-          let uploadPath = join(__dirname, '..', '..', 'uploads', 'others');
+        destination: (req, file, cb) => {
+          let uploadPath = join(__dirname, '..', '..', 'uploads');
 
-          // Decide folder based on endpoint + fieldname
-          if (req.originalUrl.includes('/users') && file.fieldname === 'avatar') {
-            uploadPath = join(__dirname, '..', '..', 'uploads', 'avatars');
-          } else if (req.originalUrl.includes('/posts') && file.fieldname === 'media') {
-            uploadPath = join(__dirname, '..', '..', 'uploads', 'media');
+          if (req.originalUrl.startsWith('/users') && file.fieldname === 'avatar') {
+            uploadPath = join(uploadPath, 'avatars');
+          } else if (req.originalUrl.startsWith('/posts') && file.fieldname === 'media') {
+            uploadPath = join(uploadPath, 'media');
           }
 
-          ensureDir(uploadPath);
-          callback(null, uploadPath);
+          cb(null, uploadPath);
         },
-        filename: (req, file, callback) => {
+        filename: (req, file, cb) => {
           const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = extname(file.originalname);
-          callback(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
+          cb(null, uniqueSuffix + '-' + file.originalname);
         },
       }),
-      limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB default limit
     }),
   ],
   exports: [MulterModule],
