@@ -1,56 +1,68 @@
-import { BadRequestException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Post } from '../entities/post.entity';
 import { User } from '../entities/user.entity';
 import { Comment } from '../entities/comment.entity';
 import { Like } from '../entities/like.entity';
-import { PostResponseDto } from 'src/dtos/postresponse.dto';
-import { LikeResponseDto } from 'src/dtos/likeresponse.dto';
+import { PostResponseDto } from '../dtos/postresponse.dto';
 
 @Injectable()
-export class PostsService {
+export class PostService {
   constructor(
     @InjectRepository(Post)
-    private postsRepository: Repository<Post>,
+    private readonly postRepository: Repository<Post>,
 
     @InjectRepository(User)
-    private usersRepository: Repository<User>,
+    private readonly userRepository: Repository<User>,
 
     @InjectRepository(Comment)
-    private commentsRepository: Repository<Comment>,
+    private readonly commentRepository: Repository<Comment>,
 
     @InjectRepository(Like)
-    private likesRepository: Repository<Like>,
-  ) { }
+    private readonly likeRepository: Repository<Like>,
+  ) {}
 
-  /** Create a new post */
-  async create(userId: number, content: string, mediaUrl: string): Promise<PostResponseDto> {
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
+  /** ✅ Create a new post */
+  async createPost(
+    userId: number,
+    content: string,
+    mediaUrl?: string,
+  ): Promise<PostResponseDto> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     if (!mediaUrl) throw new BadRequestException('Post must include media');
 
-    const post = this.postsRepository.create({ content, mediaUrl, user });
-    this.postsRepository.save(post);
+    const post = this.postRepository.create({ content, mediaUrl, user });
+    const savedPost = await this.postRepository.save(post);
+
     return {
-      id: post.id,
-      content: post.content,
-      mediaUrl: post.mediaUrl,
+      id: savedPost.id,
+      content: savedPost.content,
+      mediaUrl: savedPost.mediaUrl,
+      createdAt: savedPost.createdAt,
       user: {
         id: user.id,
         username: user.username,
       },
-    }
+      commentsCount: 0,
+      likesCount: 0,
+    };
   }
 
-  /** Fetch all posts */
-  async findAll(): Promise<PostResponseDto[]> {
-    const posts = await this.postsRepository.find({
-      relations: ['user', 'comments', 'comments.user', 'likes', 'likes.user'],
+  /** ✅ Get all posts */
+  async getAllPosts(): Promise<PostResponseDto[]> {
+    const posts = await this.postRepository.find({
+      relations: ['user', 'comments', 'likes'],
       order: { createdAt: 'DESC' },
     });
 
-    return posts.map(post => ({
+    return posts.map((post) => ({
       id: post.id,
       content: post.content,
       mediaUrl: post.mediaUrl,
@@ -59,29 +71,16 @@ export class PostsService {
         id: post.user.id,
         username: post.user.username,
       },
-      comments: post.comments?.map(c => ({
-        id: c.id,
-        content: c.content,
-        user: {
-          id: c.user.id,
-          username: c.user.username,
-        }
-      })),
-      likes: post.likes?.map(l => ({
-        id: l.id,
-        user: {
-          id: l.user.id,
-          username: l.user.username,
-        }
-      })),
+      commentsCount: post.comments?.length || 0,
+      likesCount: post.likes?.length || 0,
     }));
   }
 
-  /** Fetch single post */
-  async findOne(id: number): Promise<PostResponseDto> {
-    const post = await this.postsRepository.findOne({
-      where: { id },
-      relations: ['user', 'comments', 'comments.user', 'likes', 'likes.user'],
+  /** ✅ Get single post */
+  async getPostById(postId: number): Promise<PostResponseDto> {
+    const post = await this.postRepository.findOne({
+      where: { id: postId },
+      relations: ['user', 'comments', 'likes'],
     });
 
     if (!post) throw new NotFoundException('Post not found');
@@ -95,117 +94,103 @@ export class PostsService {
         id: post.user.id,
         username: post.user.username,
       },
-      comments: post.comments?.map(c => ({
-        id: c.id,
-        content: c.content,
-        user: {
-          id: c.user.id,
-          username: c.user.username,
-        }
-      })),
-      likes: post.likes?.map(l => ({
-        id: l.id,
-        user: {
-          id: l.user.id,
-          username: l.user.username,
-        }
-      })),
+      commentsCount: post.comments?.length || 0,
+      likesCount: post.likes?.length || 0,
     };
   }
 
+  /** ✅ Update post */
+  async updatePost(
+    postId: number,
+    userId: number,
+    content?: string,
+    mediaUrl?: string,
+  ): Promise<PostResponseDto> {
+    const post = await this.postRepository.findOne({
+      where: { id: postId },
+      relations: ['user', 'comments', 'likes'],
+    });
 
-  /** Update a post */
-  async update(id: number, content?: string, mediaUrl?: string, userId?: number): Promise<Post> {
-    const post = await this.findOne(id);
-
-    if (post.user.id !== userId) {
-      throw new ForbiddenException('You do not have permission to update this post');
-    }
+    if (!post) throw new NotFoundException('Post not found');
+    if (post.user.id !== userId)
+      throw new ForbiddenException('You can only update your own posts');
 
     if (content) post.content = content;
     if (mediaUrl) post.mediaUrl = mediaUrl;
 
-    return this.postsRepository.save(post);
-  }
+    const updated = await this.postRepository.save(post);
 
-  /** Fetch single post as Entity (for internal use like update/remove) */
-  private async findOneEntity(id: number): Promise<Post> {
-    const post = await this.postsRepository.findOne({
-      where: { id },
-      relations: ['user'], // enough for ownership check
-    });
-    if (!post) throw new NotFoundException('Post not found');
-    return post;
-  }
-
-  /** Delete a post */
-  async remove(id: number, userId: number): Promise<void> {
-    const post = await this.findOneEntity(id); // ✅ real entity
-
-    if (post.user.id !== userId) {
-      throw new ForbiddenException('You do not have permission to delete this post');
-    }
-
-    await this.postsRepository.remove(post); // ✅ works now
-  }
-
-async likePost(userId: number, postId: number): Promise<LikeResponseDto> {
-  const user = await this.usersRepository.findOne({ where: { id: userId } });
-  if (!user) throw new NotFoundException('User not found');
-
-  // ⚠️ Use Entity here, not DTO (your findOne returns DTO)
-  const post = await this.postsRepository.findOne({ where: { id: postId } });
-  if (!post) throw new NotFoundException('Post not found');
-
-  const existingLike = await this.likesRepository.findOne({
-    where: { user: { id: userId }, post: { id: postId } },
-    relations: ['user', 'post'],
-  });
-
-  if (existingLike) {
     return {
-      message: "Liked this post already",
-      id: existingLike.id,
-      user: { id: user.id, username: user.username },
-      post: { id: post.id, content: post.content, mediaurl: post.mediaUrl },
+      id: updated.id,
+      content: updated.content,
+      mediaUrl: updated.mediaUrl,
+      createdAt: updated.createdAt,
+      user: {
+        id: updated.user.id,
+        username: updated.user.username,
+      },
+      commentsCount: post.comments?.length || 0,
+      likesCount: post.likes?.length || 0,
     };
   }
 
-  const newLike = this.likesRepository.create({ user, post });
-  const savedLike = await this.likesRepository.save(newLike);
+  /** ✅ Delete post */
+  async deletePost(postId: number, userId: number): Promise<void> {
+    const post = await this.postRepository.findOne({
+      where: { id: postId },
+      relations: ['user'],
+    });
 
-  return {
-    message: "New Like added",
-    id: savedLike.id,
-    user: { id: user.id, username: user.username },
-    post: { id: post.id, content: post.content, mediaurl: post.mediaUrl },
-  };
-}
+    if (!post) throw new NotFoundException('Post not found');
+    if (post.user.id !== userId)
+      throw new ForbiddenException('You can only delete your own posts');
 
+    await this.postRepository.remove(post);
+  }
 
+  /** ✅ Like post */
+  async likePost(userId: number, postId: number): Promise<string> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const post = await this.postRepository.findOne({ where: { id: postId } });
 
+    if (!user) throw new NotFoundException('User not found');
+    if (!post) throw new NotFoundException('Post not found');
 
-/** Remove like from a post */
-async unlikePost(userId: number, postId: number): Promise<boolean> {
-  const like = await this.likesRepository.findOne({
-    where: { user: { id: userId }, post: { id: postId } },
-  });
+    const existingLike = await this.likeRepository.findOne({
+      where: { user: { id: userId }, post: { id: postId } },
+    });
 
-  if (!like) return false;
+    if (existingLike) return 'Post already liked';
 
-  await this.likesRepository.remove(like);
-  return true;
-}
+    const newLike = this.likeRepository.create({ user, post });
+    await this.likeRepository.save(newLike);
+    return 'Post liked successfully';
+  }
 
+  /** ✅ Unlike post */
+  async unlikePost(userId: number, postId: number): Promise<string> {
+    const like = await this.likeRepository.findOne({
+      where: { user: { id: userId }, post: { id: postId } },
+    });
 
-  /** Fetch comments for a post (Entity form) */
-  async getComments(postId: number): Promise<Comment[]> {
-    const post = await this.postsRepository.findOne({
+    if (!like) return 'You have not liked this post';
+
+    await this.likeRepository.remove(like);
+    return 'Post unliked successfully';
+  }
+
+  /** ✅ Get all comments for a post */
+  async getComments(postId: number) {
+    const post = await this.postRepository.findOne({
       where: { id: postId },
       relations: ['comments', 'comments.user'],
     });
     if (!post) throw new NotFoundException('Post not found');
-    return post.comments;
-  }
 
+    return post.comments.map((c) => ({
+      id: c.id,
+      content: c.content,
+      user: { id: c.user.id, username: c.user.username },
+    }));
+  }
 }

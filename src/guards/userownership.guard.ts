@@ -16,6 +16,9 @@ export class UserOwnershipGuard implements CanActivate {
     if (!user) {
       throw new ForbiddenException('Unauthorized access');
     }
+    if (user.isApproved === false){
+      throw new ForbiddenException('Account not approved');
+    }
 
     // ✅ Allow if user is ADMIN or SUPERADMIN
     if (user.role === UserRole.ADMIN || user.role === UserRole.SUPERADMIN) {

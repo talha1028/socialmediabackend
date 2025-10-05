@@ -1,7 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, HttpCode, HttpStatus, UseGuards, Request, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiBody, ApiResponse, ApiParam, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-
 import { UsersService } from 'src/services/user.services';
 import { CreateUserDto } from 'src/dtos/createuser.dto';
 import { UpdateUserDto } from 'src/dtos/updateuser.dto';
@@ -47,8 +46,9 @@ export class UsersController {
 
   /** Fetch all users (any logged-in user) */
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard,RolesGuard)
   @ApiBearerAuth('access-token')
+  @Roles(UserRole.ADMIN,UserRole.SUPERADMIN)
   @ApiResponse({ status: 200, description: 'List of all users' })
   async findAll() {
     const users = await this.usersService.findAll();
@@ -61,7 +61,7 @@ export class UsersController {
 
   /** Fetch a single user by ID (any logged-in user) */
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard,UserOwnershipGuard)
   @ApiBearerAuth('access-token')
   @ApiParam({ name: 'id', type: String, example: '1' })
   async findOne(@Param('id') id: number) {
@@ -80,6 +80,18 @@ export class UsersController {
   @ApiParam({ name: 'name', type: String, example: 'Talha' })
   async searchByName(@Param('name') name: string) {
     const users = await this.usersService.findByName(name);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Users fetched successfully',
+      data: users,
+    };
+  }
+  /** Search by name (any logged-in user) */
+  @Get('search/username/:username')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  async searchByusername(@Param('username') username: string) {
+    const users = await this.usersService.findByUsername(username);
     return {
       statusCode: HttpStatus.OK,
       message: 'Users fetched successfully',
@@ -271,7 +283,7 @@ export class UsersController {
   }
   /** Fetch followers of a user (any logged-in user) */
   @Get(':id/followers')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard,UserOwnershipGuard)
   @ApiBearerAuth('access-token')
   @ApiParam({ name: 'id', type: String, example: '1' })
   async getFollowers(@Param('id') id: number) {
@@ -285,7 +297,7 @@ export class UsersController {
 
   /** Fetch following of a user (any logged-in user) */
   @Get(':id/following')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard,UserOwnershipGuard)
   @ApiBearerAuth('access-token')
   @ApiParam({ name: 'id', type: String, example: '1' })
   async getFollowing(@Param('id') id: number) {

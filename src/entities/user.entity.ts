@@ -11,6 +11,8 @@ import {
 import { Like } from './like.entity';
 import { Post } from './post.entity';
 import { Comment } from './comment.entity';
+import { FriendRequest } from './friendrequest.entity';
+import { Follow } from './follow.entity';
 
 export enum UserRole {
   USER = 1,
@@ -59,16 +61,12 @@ export class User {
   @Column({ nullable: true })
   avatarUrl: string;
 
-  @ManyToMany(() => User, user => user.following)
-  @JoinTable({
-    name: 'followers',
-    joinColumn: { name: 'following_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'follower_id', referencedColumnName: 'id' }
-  })
-  followers: User[];
+@OneToMany(() => Follow, follow => follow.follower)
+following: Follow[];
 
-  @ManyToMany(() => User, user => user.followers)
-  following: User[];
+@OneToMany(() => Follow, follow => follow.following)
+followers: Follow[];
+
 
 
   @Column({ nullable: true })
@@ -91,4 +89,11 @@ export class User {
 
   @Column({ nullable: true })
   codeExpiresAt: Date;  // expiry time for OTP
+
+  @OneToMany(() => FriendRequest, fr => fr.sender)
+  sentRequests: FriendRequest[];
+
+  @OneToMany(() => FriendRequest, fr => fr.receiver)
+  receivedRequests: FriendRequest[];
+
 }

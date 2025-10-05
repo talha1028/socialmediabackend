@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { PostsService } from '../services/posts.service';
+import { PostService } from '../services/posts.service';
 import { Post } from '../entities/post.entity';
 import { User } from '../entities/user.entity';
 import { Comment } from '../entities/comment.entity';
@@ -11,8 +11,8 @@ import { MulterCustomModule } from './multer.module';
 @Module({
   imports: [TypeOrmModule.forFeature([Post, User, Comment, Like])
             ,MulterCustomModule],
-  providers: [PostsService],
-  exports: [PostsService],
+  providers: [PostService],
+  exports: [PostService],
   controllers: [PostsController]
   
 })

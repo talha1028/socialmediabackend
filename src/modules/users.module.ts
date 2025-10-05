@@ -8,11 +8,12 @@ import { Comment } from '../entities/comment.entity';
 import { UsersController } from 'src/controllers/user.controller';
 import { EmailModule } from './email.module';
 import { MulterCustomModule } from './multer.module';
-
+import { Follow } from 'src/entities/follow.entity';
+import { Like } from 'src/entities/like.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Post, Comment]),
+    TypeOrmModule.forFeature([User, Post, Comment,Follow,Like]),
     EmailModule,
     MulterCustomModule
   ],

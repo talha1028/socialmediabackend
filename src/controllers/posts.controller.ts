@@ -14,16 +14,16 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { PostsService } from '../services/posts.service';
+import { PostService } from '../services/posts.service';
 import { JwtAuthGuard } from '../guards/jwtauth.guard';
 import { UserOwnershipGuard } from '../guards/userownership.guard';
 import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
 
 @Controller('posts')
 export class PostsController {
-  constructor(private readonly postsService: PostsService) {}
+  constructor(private readonly postService: PostService) {}
 
-  /** Create a new post */
+  /** ✅ Create a new post */
   @Post()
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('media'))
@@ -44,7 +44,7 @@ export class PostsController {
     @UploadedFile() file: Express.Multer.File,
     @Body('content') content: string,
   ) {
-    const post = await this.postsService.create(
+    const post = await this.postService.createPost(
       req.user.userId,
       content,
       file?.filename,
@@ -57,10 +57,10 @@ export class PostsController {
     };
   }
 
-  /** Fetch all posts */
+  /** ✅ Fetch all posts */
   @Get()
   async findAll() {
-    const posts = await this.postsService.findAll();
+    const posts = await this.postService.getAllPosts();
     return {
       statusCode: HttpStatus.OK,
       message: 'Posts fetched successfully',
@@ -68,10 +68,10 @@ export class PostsController {
     };
   }
 
-  /** Fetch single post */
+  /** ✅ Fetch single post */
   @Get(':id')
   async findOne(@Param('id', ParseIntPipe) id: number) {
-    const post = await this.postsService.findOne(id);
+    const post = await this.postService.getPostById(id);
     return {
       statusCode: HttpStatus.OK,
       message: 'Post fetched successfully',
@@ -79,7 +79,7 @@ export class PostsController {
     };
   }
 
-  /** Update a post (ownership guard) */
+  /** ✅ Update a post (ownership guard) */
   @Put(':id')
   @UseGuards(JwtAuthGuard, UserOwnershipGuard)
   @UseInterceptors(FileInterceptor('media'))
@@ -89,11 +89,11 @@ export class PostsController {
     @Body('content') content?: string,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    const post = await this.postsService.update(
+    const post = await this.postService.updatePost(
       id,
+      req.user.userId, // ✅ fixed parameter order
       content,
       file?.filename,
-      req.user.userId,
     );
 
     return {
@@ -103,61 +103,55 @@ export class PostsController {
     };
   }
 
-  /** Delete a post (ownership guard) */
+  /** ✅ Delete a post (ownership guard) */
   @Delete(':id')
   @UseGuards(JwtAuthGuard, UserOwnershipGuard)
   async remove(@Request() req, @Param('id', ParseIntPipe) id: number) {
-    await this.postsService.remove(id, req.user.userId);
+    await this.postService.deletePost(id, req.user.userId);
     return {
       statusCode: HttpStatus.NO_CONTENT,
       message: 'Post deleted successfully',
     };
   }
 
-  /** Like a post */
+  /** ✅ Like a post */
   @Post(':id/like')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   async likePost(@Request() req, @Param('id', ParseIntPipe) postId: number) {
-    const like = await this.postsService.likePost(req.user.userId, postId);
-    if (!like) {
-      return {
-        statusCode: HttpStatus.CONFLICT,
-        message: 'You have already liked this post',
-      };
-    }
+    const message = await this.postService.likePost(req.user.userId, postId);
     return {
-      statusCode: HttpStatus.CREATED,
-      message: 'Post liked successfully',
-      data: like,
+      statusCode:
+        message === 'Post already liked'
+          ? HttpStatus.CONFLICT
+          : HttpStatus.CREATED,
+      message,
     };
   }
 
-  /** Unlike a post */
+  /** ✅ Unlike a post */
   @Delete(':id/unlike')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   async unlikePost(@Request() req, @Param('id', ParseIntPipe) postId: number) {
-    const removed = await this.postsService.unlikePost(
+    const message = await this.postService.unlikePost(
       req.user.userId,
       postId,
     );
-    if (!removed) {
-      return {
-        statusCode: HttpStatus.NOT_FOUND,
-        message: 'Like not found for this user on this post',
-      };
-    }
+
     return {
-      statusCode: HttpStatus.NO_CONTENT,
-      message: 'Like removed successfully',
+      statusCode:
+        message === 'You have not liked this post'
+          ? HttpStatus.NOT_FOUND
+          : HttpStatus.NO_CONTENT,
+      message,
     };
   }
 
-  /** Get comments for a post */
+  /** ✅ Get comments for a post */
   @Get(':id/comments')
   async getComments(@Param('id', ParseIntPipe) postId: number) {
-    const comments = await this.postsService.getComments(postId);
+    const comments = await this.postService.getComments(postId);
     return {
       statusCode: HttpStatus.OK,
       message: 'Comments fetched successfully',
