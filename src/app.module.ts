@@ -11,6 +11,7 @@ import { DataSource } from 'typeorm';
 import { SeedModule } from './modules/seed.module';
 import { FeedModule } from './modules/feed.module';
 import { FriendRequestsModule } from './modules/friendrequest.module';
+import { SocketModule } from './modules/socket.module';
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { FriendRequestsModule } from './modules/friendrequest.module';
         },
       ],
     }),
-    AuthModule,UsersModule,PostsModule,DatabaseModule,BullConfigModule,SeedModule,FeedModule,FriendRequestsModule
+    AuthModule,UsersModule,PostsModule,DatabaseModule,BullConfigModule,SeedModule,FeedModule,FriendRequestsModule,SocketModule
   ],
   controllers: [AppController],
   providers: [AppService],

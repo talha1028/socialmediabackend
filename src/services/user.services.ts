@@ -14,9 +14,9 @@ import { Post } from '../entities/post.entity';
 import { Comment } from '../entities/comment.entity';
 import { VerifyOtpDto } from 'src/dtos/verifyotp.dto';
 import { PublicUserDto } from 'src/dtos/publicuser.dto';
-import { Follow } from 'src/entities/follow.entity';
-import { PostResponseDto } from 'src/dtos/postresponse.dto';
-import { Like } from 'src/entities/like.entity';
+import { Follow } from '../entities/follow.entity';
+import { PostResponseDto } from '../dtos/postresponse.dto';
+import { Like } from '../entities/like.entity';
 
 @Injectable()
 export class UsersService {

@@ -5,9 +5,10 @@ import { FriendRequest } from '../entities/friendrequest.entity';
 import { User } from '../entities/user.entity';
 import { FriendRequestsService } from '../services/friendrequest.service';
 import { FriendRequestsController } from '../controllers/friendrequest.controller';
+import { SocketModule } from './socket.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([FriendRequest, User])],
+  imports: [TypeOrmModule.forFeature([FriendRequest, User]),SocketModule],
   providers: [FriendRequestsService],
   controllers: [FriendRequestsController],
 })
