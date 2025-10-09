@@ -18,6 +18,8 @@ import { PostService } from '../services/posts.service';
 import { JwtAuthGuard } from '../guards/jwtauth.guard';
 import { UserOwnershipGuard } from '../guards/userownership.guard';
 import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
+import { Roles } from 'src/decorators/roles.decorator';
+import { UserRole } from 'src/entities/user.entity';
 
 @Controller('posts')
 export class PostsController {
@@ -59,6 +61,9 @@ export class PostsController {
 
   /** ✅ Fetch all posts */
   @Get()
+    @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN,UserRole.SUPERADMIN)
   async findAll() {
     const posts = await this.postService.getAllPosts();
     return {
@@ -70,6 +75,9 @@ export class PostsController {
 
   /** ✅ Fetch single post */
   @Get(':id')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN,UserRole.SUPERADMIN)
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const post = await this.postService.getPostById(id);
     return {
@@ -82,6 +90,7 @@ export class PostsController {
   /** ✅ Update a post (ownership guard) */
   @Put(':id')
   @UseGuards(JwtAuthGuard, UserOwnershipGuard)
+  @ApiBearerAuth('acces-token')
   @UseInterceptors(FileInterceptor('media'))
   async update(
     @Request() req,
@@ -106,6 +115,7 @@ export class PostsController {
   /** ✅ Delete a post (ownership guard) */
   @Delete(':id')
   @UseGuards(JwtAuthGuard, UserOwnershipGuard)
+  @ApiBearerAuth('access-token')
   async remove(@Request() req, @Param('id', ParseIntPipe) id: number) {
     await this.postService.deletePost(id, req.user.userId);
     return {
@@ -150,6 +160,8 @@ export class PostsController {
 
   /** ✅ Get comments for a post */
   @Get(':id/comments')
+  @UseGuards(JwtAuthGuard,UserOwnershipGuard)
+  @ApiBearerAuth('accesstoken')
   async getComments(@Param('id', ParseIntPipe) postId: number) {
     const comments = await this.postService.getComments(postId);
     return {

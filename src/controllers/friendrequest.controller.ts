@@ -6,7 +6,7 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 
 @Controller('friend-requests')
 export class FriendRequestsController {
-  constructor(private readonly friendRequestsService: FriendRequestsService) {}
+  constructor(private readonly friendRequestsService: FriendRequestsService) { }
 
   @Post('send/:receiverId')
   @UseGuards(JwtAuthGuard)
@@ -32,11 +32,21 @@ export class FriendRequestsController {
     return { statusCode: HttpStatus.OK, request };
   }
 
-  @Get()
+  @Get('received')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  async list(@Request() req) {
-    const requests = await this.friendRequestsService.listRequests(req.user.userId);
+  async getReceived(@Request() req) {
+    const requests = await this.friendRequestsService.listReceivedRequests(req.user.userId);
     return { statusCode: HttpStatus.OK, requests };
   }
+
+  @Get('sent')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  async getSent(@Request() req) {
+    const requests = await this.friendRequestsService.listSentRequests(req.user.userId);
+    return { statusCode: HttpStatus.OK, requests };
+  }
+
+
 }

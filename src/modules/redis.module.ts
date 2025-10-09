@@ -2,15 +2,17 @@ import { Module, Global } from '@nestjs/common';
 import { RedisService } from '../services/redis.service';
 import { createClient } from 'redis';
 
-@Global() // makes RedisService available everywhere without re-importing
+@Global()
 @Module({
   providers: [
     {
       provide: 'REDIS_CLIENT',
       useFactory: async () => {
-        const client = createClient({
-          url: process.env.REDIS_URL || 'redis://localhost:6379',
-        });
+        const host = process.env.REDIS_HOST || 'localhost';
+        const port = process.env.REDIS_PORT || '6379';
+        const url = `redis://${host}:${port}`;
+
+        const client = createClient({ url });
         await client.connect();
         return client;
       },

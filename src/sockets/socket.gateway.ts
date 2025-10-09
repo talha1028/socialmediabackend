@@ -1,87 +1,112 @@
+// socket.gateway.ts
+
+import { Inject, forwardRef } from '@nestjs/common';
 import {
   WebSocketGateway,
-  SubscribeMessage,
-  MessageBody,
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
-  ConnectedSocket,
+  SubscribeMessage,
+  MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
+import { FriendRequestsService } from '../services/friendrequest.service';
 
-@WebSocketGateway({
-  cors: {
-    origin: '*', // ✅ Replace with your frontend URL later
-  },
-})
+@WebSocketGateway({ cors: { origin: '*' } })
 export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer()
-  server: Server;
-
-  // userId -> socketId
+  @WebSocketServer() server: Server;
   private onlineUsers = new Map<number, string>();
 
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    @Inject(forwardRef(() => FriendRequestsService))
+    private readonly friendRequestsService: FriendRequestsService,
+  ) {}
 
-  // ✅ When user connects
   async handleConnection(client: Socket) {
     try {
       const token =
         client.handshake.auth?.token ||
+        client.handshake.query?.token ||
         client.handshake.headers?.authorization?.split(' ')[1];
-      if (!token) throw new Error('No token');
 
-      const payload = this.jwtService.verify(token);
-      const userId = payload.id;
+      if (!token) return client.disconnect();
 
-      this.onlineUsers.set(userId, client.id);
+      const payload = this.jwtService.decode(token) as any;
+      const userId = payload?.userId || payload?.id || payload?.sub;
+
+      if (!userId) return client.disconnect();
+
+      this.onlineUsers.set(Number(userId), client.id);
+      client.join(`user_${userId}`);
+      client.emit('connected', { message: 'Connected', userId });
       console.log(`✅ User ${userId} connected`);
-    } catch (err) {
-      console.log('❌ Socket connection failed:', err.message);
+    } catch (e) {
+      console.log('❌ Connection error:', e.message);
       client.disconnect();
     }
   }
 
-  // ❌ When user disconnects
   handleDisconnect(client: Socket) {
     for (const [userId, socketId] of this.onlineUsers.entries()) {
       if (socketId === client.id) {
         this.onlineUsers.delete(userId);
         console.log(`❌ User ${userId} disconnected`);
-        break;
       }
     }
   }
 
-  // 🎯 For frontend event (optional)
+  // 🎯 Send friend request
   @SubscribeMessage('sendFriendRequest')
-  handleFriendRequest(
+  async handleFriendRequest(
     @MessageBody() data: { senderId: number; receiverId: number },
-    @ConnectedSocket() client: Socket,
   ) {
-    this.emitFriendRequest(data.receiverId, data.senderId);
-  }
-
-  // ✅ Universal function for emitting friend request events
-  emitFriendRequest(receiverId: number, senderId: number) {
-    const receiverSocketId = this.onlineUsers.get(receiverId);
-    if (receiverSocketId) {
-      this.server.to(receiverSocketId).emit('friendRequestReceived', {
-        senderId,
-      });
-      console.log(`📡 Friend request emitted to receiver ${receiverId} from sender ${senderId}`);
-    } else {
-      console.log(`⚠️ Receiver ${receiverId} is offline`);
+    try {
+      await this.friendRequestsService.sendRequest(data.senderId, data.receiverId);
+    } catch (err) {
+      console.error('❌ Error sending friend request:', err.message);
     }
   }
 
-  // ✅ Utility for other friend request events (accepted/rejected)
-  emitToUser(userId: number, event: string, data: any) {
-    const socketId = this.onlineUsers.get(userId);
-    if (socketId) {
-      this.server.to(socketId).emit(event, data);
-      console.log(`📢 Event '${event}' sent to user ${userId}`);
+  // ✅ Accept friend request
+  @SubscribeMessage('acceptFriendRequest')
+  async handleAcceptFriendRequest(
+    @MessageBody() data: { requestId: number; userId: number },
+  ) {
+    try {
+      await this.friendRequestsService.acceptRequest(data.requestId, data.userId);
+      console.log(`✅ Friend request ${data.requestId} accepted by user ${data.userId}`);
+    } catch (err) {
+      console.error('❌ Error accepting friend request:', err.message);
     }
+  }
+
+  // ✅ Reject friend request
+  @SubscribeMessage('rejectFriendRequest')
+  async handleRejectFriendRequest(
+    @MessageBody() data: { requestId: number; userId: number },
+  ) {
+    try {
+      await this.friendRequestsService.rejectRequest(data.requestId, data.userId);
+      console.log(`❌ Friend request ${data.requestId} rejected by user ${data.userId}`);
+    } catch (err) {
+      console.error('❌ Error rejecting friend request:', err.message);
+    }
+  }
+
+  // ✅ Notification helpers
+  notifyFriendRequest(receiverId: number, senderId: number, requestId: number) {
+    this.server.to(`user_${receiverId}`).emit('friendRequestReceived', { senderId, requestId });
+  }
+
+  notifyFriendAccepted(senderId: number, receiverId: number, requestId: number) {
+    this.server.to(`user_${senderId}`).emit('friendRequestAccepted', { receiverId, requestId });
+    this.server.to(`user_${receiverId}`).emit('friendRequestAccepted', { senderId, requestId });
+  }
+
+  notifyFriendRejected(senderId: number, receiverId: number, requestId: number) {
+    this.server.to(`user_${senderId}`).emit('friendRequestRejected', { receiverId, requestId });
+    this.server.to(`user_${receiverId}`).emit('friendRequestRejected', { senderId, requestId });
   }
 }

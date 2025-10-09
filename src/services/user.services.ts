@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
 import { EmailService } from './email.service';
+import { RedisService } from './redis.service';
 import { User } from '../entities/user.entity';
 import { CreateUserDto } from '../dtos/createuser.dto';
 import { UpdateUserDto } from '../dtos/updateuser.dto';
@@ -37,12 +38,13 @@ export class UsersService {
     private likeRepository: Repository<Like>,
 
     private readonly emailService: EmailService,
-  ) { }
+    private readonly redisService: RedisService, 
+  ) {}
 
   /** Create a new user with email verification */
   async create(createUserDto: CreateUserDto): Promise<User> {
     const otp = Math.floor(100000 + Math.random() * 900000);
-    const codeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const codeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     const user = this.usersRepository.create({
       ...createUserDto,
@@ -53,21 +55,35 @@ export class UsersService {
 
     const savedUser = await this.usersRepository.save(user);
     await this.emailService.sendOtpEmail(savedUser.email, savedUser.username, otp);
+
+    console.log(`🆕 User created -> ${savedUser.email}`);
     return savedUser;
   }
 
   /** Fetch all users */
   async findAll(): Promise<User[]> {
+    console.log('🗄️ Fetching all users from DB (not cached)');
     return this.usersRepository.find({ relations: ['followers', 'following'] });
   }
 
-  /** Fetch single user by ID */
+  /** Fetch single user by ID (with cache) */
   async findOne(id: number): Promise<User> {
+    const cacheKey = `user:${id}`;
+    const cached = await this.redisService.get(cacheKey);
+
+    if (cached) {
+      console.log(`✅ Fetched user:${id} from Redis`);
+      return JSON.parse(cached);
+    }
+
     const user = await this.usersRepository.findOne({
       where: { id },
       relations: ['followers', 'following', 'posts', 'comments'],
     });
     if (!user) throw new NotFoundException('User not found');
+
+    console.log(`🗄️ Fetched user:${id} from DB`);
+    await this.redisService.set(cacheKey, JSON.stringify(user), 60 * 5);
     return user;
   }
 
@@ -80,11 +96,16 @@ export class UsersService {
   async update(id: number, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findOne(id);
     Object.assign(user, updateUserDto);
-    return this.usersRepository.save(user);
+    const updated = await this.usersRepository.save(user);
+
+    // Clear related caches
+    await this.redisService.del(`user:${id}`);
+    await this.redisService.del(`user:username:${updated.username}`);
+    console.log(`🧹 Cache cleared for user:${id}`);
+    return updated;
   }
 
-  /** Update Last Login */
-
+  /** Update last login */
   async updatelastlogin(userId: number) {
     await this.usersRepository.update(userId, { lastLogin: new Date() });
   }
@@ -93,103 +114,102 @@ export class UsersService {
   async remove(id: number): Promise<void> {
     const user = await this.findOne(id);
     await this.usersRepository.remove(user);
+
+    await this.redisService.del(`user:${id}`);
+    await this.redisService.del(`user:username:${user.username}`);
+    console.log(`🧹 Cache removed for user:${id}`);
   }
-  //Verify OTP of a user
+
+  /** Verify OTP */
   async verifyOtp(verifyOtpDto: VerifyOtpDto): Promise<boolean> {
     const { email, otp } = verifyOtpDto;
-
     const user = await this.usersRepository.findOne({ where: { email } });
     if (!user) throw new NotFoundException('User not found');
 
-    if (!user.codeExpiresAt || user.codeExpiresAt < new Date()) {
+    if (!user.codeExpiresAt || user.codeExpiresAt < new Date())
       throw new UnauthorizedException('OTP expired or not set');
-    }
 
-    if (user.verificationCode !== Number(otp)) {
+    if (user.verificationCode !== Number(otp))
       throw new BadRequestException('Invalid OTP');
-    }
 
     user.isApproved = true;
     await this.usersRepository.save(user);
+    console.log(`✅ OTP verified for ${email}`);
     return true;
   }
-  //Resend otp mail
+
+  /** Resend OTP */
   async resendOtp(email: string): Promise<void> {
     const user = await this.usersRepository.findOne({ where: { email } });
     if (!user) throw new NotFoundException('User not found');
 
-    if (user.isApproved) {
+    if (user.isApproved)
       throw new BadRequestException('User already verified');
-    }
 
-    // 1️⃣ Generate new OTP & expiry
     const otp = Math.floor(100000 + Math.random() * 900000);
     user.verificationCode = otp;
     user.codeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await this.usersRepository.save(user);
-
-    // 2️⃣ Send email
     await this.emailService.sendOtpEmail(user.email, user.username, otp);
+    console.log(`📩 OTP resent to ${email}`);
   }
 
+  /** Update avatar */
   async updateAvatar(userId: number, filename: string): Promise<string> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    // build a URL or relative path
     const avatarUrl = `/uploads/avatars/${filename}`;
     user.avatarUrl = avatarUrl;
-
     await this.usersRepository.save(user);
+
+    await this.redisService.del(`user:${userId}`);
+    console.log(`🧹 Cleared cache after avatar update for user:${userId}`);
     return avatarUrl;
   }
 
-/** Fetch posts of a user with counts */
-async getPosts(id: number): Promise<PostResponseDto[]> {
-  const user = await this.usersRepository.findOne({
-    where: { id },
-    relations: ['posts', 'posts.user'], // only load user info, not likes/comments
-  });
+  /** Fetch posts of a user (cached) */
+  async getPosts(id: number): Promise<PostResponseDto[]> {
+    const cacheKey = `user:${id}:posts`;
+    const cached = await this.redisService.get(cacheKey);
 
-  if (!user) throw new NotFoundException('User not found');
+    if (cached) {
+      console.log(`✅ Fetched posts for user:${id} from Redis`);
+      return JSON.parse(cached);
+    }
 
-  const results: PostResponseDto[] = [];
-
-  for (const post of user.posts) {
-    // Count comments and likes from repos
-    const commentsCount = await this.commentRepository.count({
-      where: { post: { id: post.id } },
+    const user = await this.usersRepository.findOne({
+      where: { id },
+      relations: ['posts', 'posts.user'],
     });
+    if (!user) throw new NotFoundException('User not found');
 
-    const likesCount = await this.likeRepository.count({
-      where: { post: { id: post.id } },
-    });
+    console.log(`🗄️ Fetched posts for user:${id} from DB`);
+    const results: PostResponseDto[] = [];
 
-    results.push({
-      id: post.id,
-      content: post.content,
-      mediaUrl: post.mediaUrl,
-      createdAt: post.createdAt,
+    for (const post of user.posts) {
+      const commentsCount = await this.commentRepository.count({ where: { post: { id: post.id } } });
+      const likesCount = await this.likeRepository.count({ where: { post: { id: post.id } } });
 
-      user: {
-        id: post.user.id,
-        username: post.user.username,
-      },
+      results.push({
+        id: post.id,
+        content: post.content,
+        mediaUrl: post.mediaUrl,
+        createdAt: post.createdAt,
+        user: { id: post.user.id, username: post.user.username },
+        commentsCount,
+        likesCount,
+      });
+    }
 
-      // instead of mapping full arrays
-      commentsCount,
-      likesCount,
-    } as PostResponseDto);
+    await this.redisService.set(cacheKey, JSON.stringify(results), 60 * 5);
+    return results;
   }
-
-  return results;
-}
-
-
 
   /** Fetch comments of a user */
   async getComments(id: number): Promise<Comment[]> {
+    console.log(`🗄️ Fetching comments of user:${id} from DB`);
     const user = await this.usersRepository.findOne({
       where: { id },
       relations: ['comments'],
@@ -198,87 +218,114 @@ async getPosts(id: number): Promise<PostResponseDto[]> {
     return user.comments;
   }
 
-  /** Fetch followers of a user */
+  /** Followers (cached) */
   async getFollowers(id: number) {
+    const cacheKey = `user:${id}:followers`;
+    const cached = await this.redisService.get(cacheKey);
+
+    if (cached) {
+      console.log(`✅ Fetched followers of user:${id} from Redis`);
+      return JSON.parse(cached);
+    }
+
     const user = await this.findById(id);
     if (!user) throw new NotFoundException('User not found');
 
+    console.log(`🗄️ Fetched followers of user:${id} from DB`);
     const followers = await this.followRepository.find({
       where: { following: { id } },
       relations: ['follower'],
     });
 
-    return followers.map(f => ({
+    const result = followers.map(f => ({
       username: f.follower.username,
       email: f.follower.email,
       isApproved: f.follower.isApproved,
     }));
+
+    await this.redisService.set(cacheKey, JSON.stringify(result), 60 * 5);
+    return result;
   }
 
-
-
-  /** Fetch following of a user */
+  /** Following (cached) */
   async getFollowing(id: number) {
+    const cacheKey = `user:${id}:following`;
+    const cached = await this.redisService.get(cacheKey);
+
+    if (cached) {
+      console.log(`✅ Fetched following of user:${id} from Redis`);
+      return JSON.parse(cached);
+    }
+
     const user = await this.findById(id);
     if (!user) throw new NotFoundException('User not found');
 
+    console.log(`🗄️ Fetched following of user:${id} from DB`);
     const following = await this.followRepository.find({
       where: { follower: { id } },
       relations: ['following'],
     });
 
-    return following.map(f => ({
+    const result = following.map(f => ({
       username: f.following.username,
       email: f.following.email,
       isApproved: f.following.isApproved,
     }));
+
+    await this.redisService.set(cacheKey, JSON.stringify(result), 60 * 5);
+    return result;
   }
 
-
+  /** Follow user */
   async follow(userId: number, targetUserId: number): Promise<void> {
-    if (userId === targetUserId) {
+    if (userId === targetUserId)
       throw new BadRequestException('You cannot follow yourself.');
-    }
 
     const follower = await this.findById(userId);
     const following = await this.findById(targetUserId);
 
-    if (!follower || !following) {
+    if (!follower || !following)
       throw new NotFoundException('User or target not found.');
-    }
 
     const existing = await this.followRepository.findOne({
       where: { follower: { id: userId }, following: { id: targetUserId } },
     });
-    if (existing) {
-      throw new BadRequestException('You are already following this user.');
-    }
+    if (existing)
+      throw new BadRequestException('Already following this user.');
 
     const follow = this.followRepository.create({ follower, following });
     await this.followRepository.save(follow);
-    // 📩 Optional: send notification email to the target user
-    // await this.emailService.sendNotificationEmail(
-    //   target.email,
-    //   '👥 New Follower!',
-    //   `${user.username} started following you.`
-    // );
+
+    await this.redisService.del(`user:${userId}:following`);
+    await this.redisService.del(`user:${targetUserId}:followers`);
+    console.log(`🔄 Cache invalidated for follow/unfollow between ${userId} and ${targetUserId}`);
   }
 
-
+  /** Unfollow user */
   async unfollow(userId: number, targetUserId: number): Promise<void> {
     const follow = await this.followRepository.findOne({
       where: { follower: { id: userId }, following: { id: targetUserId } },
     });
 
-    if (!follow) {
-      throw new BadRequestException('You are not following this user.');
-    }
+    if (!follow)
+      throw new BadRequestException('Not following this user.');
 
     await this.followRepository.remove(follow);
+    await this.redisService.del(`user:${userId}:following`);
+    await this.redisService.del(`user:${targetUserId}:followers`);
+    console.log(`🔄 Cache invalidated for unfollow between ${userId} and ${targetUserId}`);
   }
 
-  // Find by firstname or lastname, then count via repos
+  /** Search users by name (cached) */
   async findByName(name: string): Promise<PublicUserDto[]> {
+    const cacheKey = `user:search:${name.toLowerCase()}`;
+    const cached = await this.redisService.get(cacheKey);
+
+    if (cached) {
+      console.log(`✅ Fetched search "${name}" from Redis`);
+      return JSON.parse(cached);
+    }
+
     const users = await this.usersRepository.find({
       where: [
         { firstName: ILike(`%${name}%`) },
@@ -287,24 +334,16 @@ async getPosts(id: number): Promise<PostResponseDto[]> {
       select: ['id', 'email', 'username', 'isApproved'],
     });
 
-    if (!users.length) {
+    if (!users.length)
       throw new NotFoundException(`No users found with name like "${name}"`);
-    }
 
+    console.log(`🗄️ Fetched search "${name}" from DB`);
     const results: PublicUserDto[] = [];
 
     for (const u of users) {
-      const followersCount = await this.followRepository.count({
-        where: { following: { id: u.id } },
-      });
-
-      const followingCount = await this.followRepository.count({
-        where: { follower: { id: u.id } },
-      });
-
-      const postsCount = await this.postsRepository.count({
-        where: { user: { id: u.id } },
-      });
+      const followersCount = await this.followRepository.count({ where: { following: { id: u.id } } });
+      const followingCount = await this.followRepository.count({ where: { follower: { id: u.id } } });
+      const postsCount = await this.postsRepository.count({ where: { user: { id: u.id } } });
 
       results.push({
         email: u.email,
@@ -316,26 +355,29 @@ async getPosts(id: number): Promise<PostResponseDto[]> {
       });
     }
 
+    await this.redisService.set(cacheKey, JSON.stringify(results), 60 * 5);
     return results;
   }
 
+  /** Find by username (cached) */
   async findByUsername(username: string): Promise<PublicUserDto> {
+    const cacheKey = `user:username:${username}`;
+    const cached = await this.redisService.get(cacheKey);
+
+    if (cached) {
+      console.log(`✅ Fetched user "${username}" from Redis`);
+      return JSON.parse(cached);
+    }
+
     const user = await this.usersRepository.findOne({ where: { username } });
     if (!user) throw new NotFoundException(`User with username "${username}" not found`);
 
-    const followersCount = await this.followRepository.count({
-      where: { following: { id: user.id } },
-    });
+    console.log(`🗄️ Fetched user "${username}" from DB`);
+    const followersCount = await this.followRepository.count({ where: { following: { id: user.id } } });
+    const followingCount = await this.followRepository.count({ where: { follower: { id: user.id } } });
+    const postsCount = await this.postsRepository.count({ where: { user: { id: user.id } } });
 
-    const followingCount = await this.followRepository.count({
-      where: { follower: { id: user.id } },
-    });
-
-    const postsCount = await this.postsRepository.count({
-      where: { user: { id: user.id } },
-    });
-
-    return {
+    const result = {
       email: user.email,
       username: user.username,
       isApproved: user.isApproved,
@@ -343,11 +385,13 @@ async getPosts(id: number): Promise<PostResponseDto[]> {
       followingCount,
       postsCount,
     };
+
+    await this.redisService.set(cacheKey, JSON.stringify(result), 60 * 5);
+    return result;
   }
 
-  // Find by ID
+  /** Find by ID (simple DB fetch) */
   async findById(id: number) {
     return this.usersRepository.findOneBy({ id });
   }
-
 }

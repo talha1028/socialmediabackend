@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Friend Requests Test</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  </head>
+  <body>
+    <h2>Friend Request Test</h2>
+
+    <div>
+      <input id="token" placeholder="JWT token" size="50" />
+      <button id="connectBtn">Connect</button>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <input id="receiverId" type="number" placeholder="Receiver ID" />
+      <button id="sendRequestBtn">Send Friend Request</button>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <input id="requestId" type="number" placeholder="Request ID" />
+      <button id="acceptBtn">Accept Request</button>
+      <button id="rejectBtn">Reject Request</button>
+    </div>
+
+    <p id="log"></p>
+
+    <script>
+      let socket;
+
+      const log = (msg) => {
+        document.getElementById("log").innerHTML += `<br>${msg}`;
+      };
+
+      document.getElementById("connectBtn").addEventListener("click", () => {
+        const token = document.getElementById("token").value.trim();
+        if (!token) return alert("Enter token first");
+
+        socket = io("http://localhost:3000", { auth: { token } });
+
+        socket.on("connect", () => log("✅ Connected to server"));
+        socket.on("connected", (data) => log("📡 " + JSON.stringify(data)));
+        socket.on("friendRequestReceived", (data) =>
+          log(`📩 Friend Request from user ${data.senderId} (Request ID: ${data.requestId})`)
+        );
+        socket.on("friendRequestAccepted", (data) =>
+          log(`🤝 Friend Request Accepted: ${JSON.stringify(data)}`)
+        );
+        socket.on("friendRequestRejected", (data) =>
+          log(`❌ Friend Request Rejected: ${JSON.stringify(data)}`)
+        );
+
+        socket.on("disconnect", () => log("❌ Disconnected"));
+      });
+
+      document.getElementById("sendRequestBtn").addEventListener("click", () => {
+        const receiverId = parseInt(document.getElementById("receiverId").value);
+        if (!receiverId || !socket) return alert("Connect and enter receiverId first!");
+
+        const token = document.getElementById("token").value.trim();
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const senderId = payload.userId || payload.id || payload.sub;
+
+        socket.emit("sendFriendRequest", { senderId, receiverId });
+        log(`📤 Sent friend request to ${receiverId}`);
+      });
+
+      document.getElementById("acceptBtn").addEventListener("click", () => {
+        const requestId = parseInt(document.getElementById("requestId").value);
+        const token = document.getElementById("token").value.trim();
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const userId = payload.userId || payload.id || payload.sub;
+
+        if (!requestId || !socket) return alert("Enter Request ID and connect first");
+        socket.emit("acceptFriendRequest", { requestId, userId });
+        log(`✅ Accepted friend request ${requestId}`);
+      });
+
+      document.getElementById("rejectBtn").addEventListener("click", () => {
+        const requestId = parseInt(document.getElementById("requestId").value);
+        const token = document.getElementById("token").value.trim();
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const userId = payload.userId || payload.id || payload.sub;
+
+        if (!requestId || !socket) return alert("Enter Request ID and connect first");
+        socket.emit("rejectFriendRequest", { requestId, userId });
+        log(`🚫 Rejected friend request ${requestId}`);
+      });
+    </script>
+  </body>
+</html>

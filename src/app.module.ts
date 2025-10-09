@@ -12,6 +12,7 @@ import { SeedModule } from './modules/seed.module';
 import { FeedModule } from './modules/feed.module';
 import { FriendRequestsModule } from './modules/friendrequest.module';
 import { SocketModule } from './modules/socket.module';
+import { RedisModule } from './modules/redis.module';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { SocketModule } from './modules/socket.module';
         },
       ],
     }),
-    AuthModule,UsersModule,PostsModule,DatabaseModule,BullConfigModule,SeedModule,FeedModule,FriendRequestsModule,SocketModule
+    AuthModule,UsersModule,PostsModule,DatabaseModule,BullConfigModule,SeedModule,FeedModule,FriendRequestsModule,SocketModule,RedisModule
   ],
   controllers: [AppController],
   providers: [AppService],

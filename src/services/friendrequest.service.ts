@@ -1,9 +1,18 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { FriendRequest, FriendRequestStatus } from '../entities/friendrequest.entity';
+import {
+  FriendRequest,
+  FriendRequestStatus,
+} from '../entities/friendrequest.entity';
 import { User } from '../entities/user.entity';
-import { SocketGateway } from '../sockets/socket.gateway';
+import { PublicUserDto } from 'src/dtos/publicuser.dto';
+import { SocketGateway } from '../sockets/socket.gateway'; // ✅ import gateway
 
 @Injectable()
 export class FriendRequestsService {
@@ -14,7 +23,7 @@ export class FriendRequestsService {
     @InjectRepository(User)
     private usersRepo: Repository<User>,
 
-    private readonly socketGateway: SocketGateway,
+    private readonly socketGateway: SocketGateway, // ✅ inject socket gateway
   ) {}
 
   async sendRequest(senderId: number, receiverId: number): Promise<FriendRequest> {
@@ -37,8 +46,8 @@ export class FriendRequestsService {
     const request = this.friendRequestsRepo.create({ sender, receiver });
     const saved = await this.friendRequestsRepo.save(request);
 
-    // ✅ Real-time notification
-    this.socketGateway.emitFriendRequest(receiverId, senderId);
+    // ✅ Emit socket event (notify receiver)
+    this.socketGateway.notifyFriendRequest(receiverId, senderId, saved.id);
 
     return saved;
   }
@@ -48,6 +57,7 @@ export class FriendRequestsService {
       where: { id: requestId },
       relations: ['receiver', 'sender'],
     });
+
     if (!request) throw new NotFoundException('Friend request not found');
     if (request.receiver.id !== userId)
       throw new ForbiddenException('Not authorized');
@@ -55,11 +65,8 @@ export class FriendRequestsService {
     request.status = FriendRequestStatus.ACCEPTED;
     const updated = await this.friendRequestsRepo.save(request);
 
-    // ✅ Notify sender
-    this.socketGateway.emitToUser(request.sender.id, 'friendRequestAccepted', {
-      senderId: request.receiver.id,
-      receiverId: request.sender.id,
-    });
+    // ✅ Notify both users in real time
+    this.socketGateway.notifyFriendAccepted(request.sender.id, request.receiver.id, request.id);
 
     return updated;
   }
@@ -69,6 +76,7 @@ export class FriendRequestsService {
       where: { id: requestId },
       relations: ['receiver', 'sender'],
     });
+
     if (!request) throw new NotFoundException('Friend request not found');
     if (request.receiver.id !== userId)
       throw new ForbiddenException('Not authorized');
@@ -76,18 +84,49 @@ export class FriendRequestsService {
     request.status = FriendRequestStatus.REJECTED;
     const updated = await this.friendRequestsRepo.save(request);
 
-    // ✅ Notify sender
-    this.socketGateway.emitToUser(request.sender.id, 'friendRequestRejected', {
-      senderId: request.receiver.id,
-      receiverId: request.sender.id,
-    });
+    // ✅ Notify both users
+    this.socketGateway.notifyFriendRejected(request.sender.id, request.receiver.id, request.id);
 
     return updated;
   }
 
-  async listRequests(userId: number): Promise<FriendRequest[]> {
-    return this.friendRequestsRepo.find({
+  async listReceivedRequests(userId: number): Promise<any[]> {
+    const requests = await this.friendRequestsRepo.find({
       where: { receiver: { id: userId }, status: FriendRequestStatus.PENDING },
+      relations: ['sender', 'receiver'],
     });
+
+    return requests.map(req => ({
+      id: req.id,
+      status: req.status,
+      createdAt: req.createdAt,
+      updatedAt: req.updatedAt,
+      sender: this.mapUser(req.sender),
+      receiver: this.mapUser(req.receiver),
+    }));
+  }
+
+  async listSentRequests(userId: number): Promise<any[]> {
+    const requests = await this.friendRequestsRepo.find({
+      where: { sender: { id: userId }, status: FriendRequestStatus.PENDING },
+      relations: ['sender', 'receiver'],
+    });
+
+    return requests.map(req => ({
+      id: req.id,
+      status: req.status,
+      createdAt: req.createdAt,
+      updatedAt: req.updatedAt,
+      sender: this.mapUser(req.sender),
+      receiver: this.mapUser(req.receiver),
+    }));
+  }
+
+  private mapUser(user: User): PublicUserDto {
+    return {
+      email: user.email,
+      username: user.username,
+      isApproved: user.isApproved,
+    };
   }
 }

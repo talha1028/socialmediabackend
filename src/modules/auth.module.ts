@@ -9,7 +9,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 
 @Module({
   imports: [
-    ConfigModule.forRoot(), // 👈 make .env values available
+    ConfigModule.forRoot(),
     UsersModule,
     PassportModule.register({ defaultStrategy: "jwt" }),
     JwtModule.registerAsync({

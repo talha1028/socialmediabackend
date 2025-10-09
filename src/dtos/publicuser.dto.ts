@@ -3,7 +3,7 @@ export class PublicUserDto {
   username: string;
   isApproved: boolean;
 
-  followersCount: number;
-  followingCount: number;
-  postsCount: number;
+  followersCount?: number;
+  followingCount?: number;
+  postsCount?: number;
 }

@@ -61,11 +61,11 @@ export class User {
   @Column({ nullable: true })
   avatarUrl: string;
 
-@OneToMany(() => Follow, follow => follow.follower)
-following: Follow[];
+  @OneToMany(() => Follow, follow => follow.follower)
+  following: Follow[];
 
-@OneToMany(() => Follow, follow => follow.following)
-followers: Follow[];
+  @OneToMany(() => Follow, follow => follow.following)
+  followers: Follow[];
 
 
 

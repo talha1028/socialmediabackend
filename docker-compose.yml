@@ -1,0 +1,29 @@
+version: '3.9'
+
+services:
+  app:
+    build: .
+    container_name: nest-app
+    restart: always
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis           # ✅ connect to redis container
+      - REDIS_PORT=6379
+      - DB_HOST=host.docker.internal  # ✅ connect to your existing postgres
+      - DB_PORT=5432
+      - DB_USER=nestuser
+      - DB_PASS=1234
+      - DB_NAME=socialmedia
+      - JWT_SECRET=secret_pass123
+      - JWT_EXPIRES=3600s
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:alpine
+    container_name: nest-redis
+    ports:
+      - '6379:6379'
+    restart: always
