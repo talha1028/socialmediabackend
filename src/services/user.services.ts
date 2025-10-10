@@ -30,35 +30,67 @@ export class UsersService {
 
     @InjectRepository(Follow)
     private followRepository: Repository<Follow>,
-    
+
     @InjectRepository(Comment)
     private commentRepository: Repository<Comment>,
-    
+
     @InjectRepository(Like)
     private likeRepository: Repository<Like>,
 
     private readonly emailService: EmailService,
-    private readonly redisService: RedisService, 
-  ) {}
+    private readonly redisService: RedisService,
+  ) { }
 
-  /** Create a new user with email verification */
+  /** Create a new user with email verification (safe + checked) */
   async create(createUserDto: CreateUserDto): Promise<User> {
-    const otp = Math.floor(100000 + Math.random() * 900000);
-    const codeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    const user = this.usersRepository.create({
-      ...createUserDto,
-      isApproved: false,
-      verificationCode: otp,
-      codeExpiresAt,
+    // 🧩 1️⃣ Check for existing email or username
+    const existingUser = await this.usersRepository.findOne({
+      where: [{ email: createUserDto.email }, { username: createUserDto.username }],
     });
 
-    const savedUser = await this.usersRepository.save(user);
-    await this.emailService.sendOtpEmail(savedUser.email, savedUser.username, otp);
+    if (existingUser) {
+      if (existingUser.email === createUserDto.email)
+        throw new BadRequestException('Email already registered');
+      if (existingUser.username === createUserDto.username)
+        throw new BadRequestException('Username already taken');
+    }
 
-    console.log(`🆕 User created -> ${savedUser.email}`);
-    return savedUser;
+    try {
+      // 🧩 2️⃣ Generate OTP and expiry
+      const otp = Math.floor(100000 + Math.random() * 900000);
+      const codeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      // 🧩 3️⃣ Create user instance
+      const user = this.usersRepository.create({
+        ...createUserDto,
+        isApproved: false,
+        verificationCode: otp,
+        codeExpiresAt,
+      });
+
+      // 🧩 4️⃣ Save to DB
+      const savedUser = await this.usersRepository.save(user);
+
+      // 🧩 5️⃣ Send OTP email
+      await this.emailService.sendOtpEmail(savedUser.email, savedUser.username, otp);
+
+      console.log(`🆕 User created -> ${savedUser.email}`);
+      return savedUser;
+
+    } catch (error) {
+      // 🧩 6️⃣ Handle database-level duplicate key error (Postgres code 23505)
+      if (error.code === '23505') {
+        if (error.detail?.includes('email'))
+          throw new BadRequestException('Email already exists');
+        if (error.detail?.includes('username'))
+          throw new BadRequestException('Username already taken');
+      }
+
+      console.error('❌ Error creating user:', error);
+      throw new BadRequestException('Failed to create user');
+    }
   }
+
 
   /** Fetch all users */
   async findAll(): Promise<User[]> {

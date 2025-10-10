@@ -129,4 +129,30 @@ export class FriendRequestsService {
       isApproved: user.isApproved,
     };
   }
+  
+  async removeFriend(userId: number, friendUsername: string): Promise<{ message: string }> {
+  // Find the friend by username
+  const friend = await this.usersRepo.findOne({ where: { username: friendUsername } });
+  if (!friend) throw new NotFoundException('Friend not found');
+
+  // Find accepted friend request (in either direction)
+  const friendship = await this.friendRequestsRepo.findOne({
+    where: [
+      { sender: { id: userId }, receiver: { id: friend.id }, status: FriendRequestStatus.ACCEPTED },
+      { sender: { id: friend.id }, receiver: { id: userId }, status: FriendRequestStatus.ACCEPTED },
+    ],
+    relations: ['sender', 'receiver'],
+  });
+
+  if (!friendship) throw new NotFoundException('No friendship found with this user');
+
+  // Delete the friendship
+  await this.friendRequestsRepo.remove(friendship);
+
+  // ✅ Notify both users (optional, if you want to use socket)
+  this.socketGateway.notifyFriendRemoved(userId, friend.id);
+
+  return { message: `You are no longer friends with ${friend.username}` };
+}
+
 }

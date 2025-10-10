@@ -101,8 +101,7 @@ export class UsersController {
 
   /** Update a user (owner OR ADMIN/SUPERADMIN) */
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard, UserOwnershipGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
+  @UseGuards(JwtAuthGuard, UserOwnershipGuard)
   @ApiBearerAuth('access-token')
   @ApiParam({ name: 'id', type: String, example: '1' })
   @ApiBody({
@@ -229,7 +228,7 @@ export class UsersController {
 
   /** Fetch posts of a user (any logged-in user) */
   @Get(':id/posts')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard,UserOwnershipGuard)
   @ApiBearerAuth('access-token')
   @ApiParam({ name: 'id', type: String, example: '1' })
   async getPosts(@Param('id') id: number) {
@@ -243,7 +242,7 @@ export class UsersController {
 
   /** Fetch comments of a user (any logged-in user) */
   @Get(':id/comments')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard,UserOwnershipGuard)
   @ApiBearerAuth('access-token')
   @ApiParam({ name: 'id', type: String, example: '1' })
   async getComments(@Param('id') id: number) {

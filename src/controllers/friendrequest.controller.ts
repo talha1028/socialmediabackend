@@ -1,5 +1,5 @@
 // src/controllers/friend-requests.controller.ts
-import { Controller, Post, Get, Put, Param, UseGuards, Request, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Put, Param, UseGuards, Request, HttpStatus, Delete } from '@nestjs/common';
 import { FriendRequestsService } from '../services/friendrequest.service';
 import { JwtAuthGuard } from '../guards/jwtauth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -47,6 +47,20 @@ export class FriendRequestsController {
     const requests = await this.friendRequestsService.listSentRequests(req.user.userId);
     return { statusCode: HttpStatus.OK, requests };
   }
+  
+    /** 🗑️ Remove a friend by username */
+  @Delete('remove/:username')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  async removeFriend(@Request() req, @Param('username') username: string) {
+    const result = await this.friendRequestsService.removeFriend(req.user.userId, username);
+    return {
+      statusCode: HttpStatus.OK,
+      message: `Removed ${username} from friend list`,
+      result,
+    };
+  }
+
 
 
 }

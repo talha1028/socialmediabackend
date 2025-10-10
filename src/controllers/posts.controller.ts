@@ -23,7 +23,7 @@ import { UserRole } from 'src/entities/user.entity';
 
 @Controller('posts')
 export class PostsController {
-  constructor(private readonly postService: PostService) {}
+  constructor(private readonly postService: PostService) { }
 
   /** ✅ Create a new post */
   @Post()
@@ -61,9 +61,9 @@ export class PostsController {
 
   /** ✅ Fetch all posts */
   @Get()
-    @ApiBearerAuth('access-token')
+  @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard)
-  @Roles(UserRole.ADMIN,UserRole.SUPERADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
   async findAll() {
     const posts = await this.postService.getAllPosts();
     return {
@@ -77,7 +77,7 @@ export class PostsController {
   @Get(':id')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard)
-  @Roles(UserRole.ADMIN,UserRole.SUPERADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const post = await this.postService.getPostById(id);
     return {
@@ -87,11 +87,24 @@ export class PostsController {
     };
   }
 
-  /** ✅ Update a post (ownership guard) */
   @Put(':id')
   @UseGuards(JwtAuthGuard, UserOwnershipGuard)
-  @ApiBearerAuth('acces-token')
+  @ApiBearerAuth('access-token')
   @UseInterceptors(FileInterceptor('media'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', example: 'Updated post text' },
+        media: {
+          type: 'string',
+          format: 'binary',
+          description: 'Optional image or video file',
+        },
+      },
+    },
+  })
   async update(
     @Request() req,
     @Param('id', ParseIntPipe) id: number,
@@ -100,7 +113,7 @@ export class PostsController {
   ) {
     const post = await this.postService.updatePost(
       id,
-      req.user.userId, // ✅ fixed parameter order
+      req.user.userId,
       content,
       file?.filename,
     );
@@ -160,7 +173,7 @@ export class PostsController {
 
   /** ✅ Get comments for a post */
   @Get(':id/comments')
-  @UseGuards(JwtAuthGuard,UserOwnershipGuard)
+  @UseGuards(JwtAuthGuard, UserOwnershipGuard)
   @ApiBearerAuth('accesstoken')
   async getComments(@Param('id', ParseIntPipe) postId: number) {
     const comments = await this.postService.getComments(postId);

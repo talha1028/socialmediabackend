@@ -22,7 +22,7 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly jwtService: JwtService,
     @Inject(forwardRef(() => FriendRequestsService))
     private readonly friendRequestsService: FriendRequestsService,
-  ) {}
+  ) { }
 
   async handleConnection(client: Socket) {
     try {
@@ -109,4 +109,19 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(`user_${senderId}`).emit('friendRequestRejected', { receiverId, requestId });
     this.server.to(`user_${receiverId}`).emit('friendRequestRejected', { senderId, requestId });
   }
+  notifyFriendRemoved(userId: number, friendId: number) {
+    // Notify both users that the friendship has been removed
+    this.server.to(`user_${userId}`).emit('friendRemoved', {
+      friendId,
+      message: `You are no longer friends with user ${friendId}`,
+    });
+
+    this.server.to(`user_${friendId}`).emit('friendRemoved', {
+      friendId: userId,
+      message: `User ${userId} has removed you from their friend list`,
+    });
+
+    console.log(`🗑️ Friendship removed between user ${userId} and user ${friendId}`);
+  }
+
 }
