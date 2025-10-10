@@ -26,7 +26,7 @@ export class PostService {
 
     @InjectRepository(Like)
     private readonly likeRepository: Repository<Like>,
-  ) {}
+  ) { }
 
   /** ✅ Create a new post */
   async createPost(
@@ -178,6 +178,32 @@ export class PostService {
     await this.likeRepository.remove(like);
     return 'Post unliked successfully';
   }
+  /** ✅ Add comment to a post */
+  async addComment(userId: number, postId: number, content: string) {
+    if (!content || !content.trim()) {
+      throw new BadRequestException('Comment cannot be empty');
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const post = await this.postRepository.findOne({ where: { id: postId } });
+
+    if (!user) throw new NotFoundException('User not found');
+    if (!post) throw new NotFoundException('Post not found');
+
+    const comment = this.commentRepository.create({ content, user, post });
+    const saved = await this.commentRepository.save(comment);
+
+    return {
+      id: saved.id,
+      content: saved.content,
+      createdAt: saved.createdAt,
+      user: {
+        id: user.id,
+        username: user.username,
+      },
+    };
+  }
+
 
   /** ✅ Get all comments for a post */
   async getComments(postId: number) {
@@ -193,4 +219,5 @@ export class PostService {
       user: { id: c.user.id, username: c.user.username },
     }));
   }
+
 }

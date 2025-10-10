@@ -17,10 +17,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { PostService } from '../services/posts.service';
 import { JwtAuthGuard } from '../guards/jwtauth.guard';
 import { UserOwnershipGuard } from '../guards/userownership.guard';
-import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Roles } from 'src/decorators/roles.decorator';
 import { UserRole } from 'src/entities/user.entity';
 
+@ApiTags('Posts')
 @Controller('posts')
 export class PostsController {
   constructor(private readonly postService: PostService) { }
@@ -59,7 +60,7 @@ export class PostsController {
     };
   }
 
-  /** ✅ Fetch all posts */
+  /** ✅ Fetch all posts (Admin only) */
   @Get()
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard)
@@ -77,7 +78,6 @@ export class PostsController {
   @Get(':id')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const post = await this.postService.getPostById(id);
     return {
@@ -87,6 +87,7 @@ export class PostsController {
     };
   }
 
+  /** ✅ Update post (owner or admin only) */
   @Put(':id')
   @UseGuards(JwtAuthGuard, UserOwnershipGuard)
   @ApiBearerAuth('access-token')
@@ -97,12 +98,9 @@ export class PostsController {
       type: 'object',
       properties: {
         content: { type: 'string', example: 'Updated post text' },
-        media: {
-          type: 'string',
-          format: 'binary',
-          description: 'Optional image or video file',
-        },
+        media: { type: 'string', format: 'binary', description: 'Optional file' },
       },
+      required: [],
     },
   })
   async update(
@@ -125,7 +123,7 @@ export class PostsController {
     };
   }
 
-  /** ✅ Delete a post (ownership guard) */
+  /** ✅ Delete post (owner or admin only) */
   @Delete(':id')
   @UseGuards(JwtAuthGuard, UserOwnershipGuard)
   @ApiBearerAuth('access-token')
@@ -171,10 +169,40 @@ export class PostsController {
     };
   }
 
+  /** ✅ Add a comment to a post */
+  @Post(':id/comments')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', example: 'Nice post!' },
+      },
+      required: ['text'],
+    },
+  })
+  async addComment(
+    @Request() req,
+    @Param('id', ParseIntPipe) postId: number,
+    @Body('text') text: string,
+  ) {
+    const comment = await this.postService.addComment(
+      req.user.userId,
+      postId,
+      text,
+    );
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: 'Comment added successfully',
+      data: comment,
+    };
+  }
+
   /** ✅ Get comments for a post */
   @Get(':id/comments')
-  @UseGuards(JwtAuthGuard, UserOwnershipGuard)
-  @ApiBearerAuth('accesstoken')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
   async getComments(@Param('id', ParseIntPipe) postId: number) {
     const comments = await this.postService.getComments(postId);
     return {

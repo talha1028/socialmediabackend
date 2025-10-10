@@ -4,6 +4,8 @@ import { Repository, Like as TypeOrmLike } from 'typeorm';
 import { Post } from '../entities/post.entity';
 import { User } from '../entities/user.entity';
 import { FeedPostDto, FeedAuthorDto } from '../dtos/feedpost.dto'
+import { Follow } from 'src/entities/follow.entity';
+import { In } from 'typeorm';
 
 @Injectable()
 export class FeedService {
@@ -13,7 +15,10 @@ export class FeedService {
 
     @InjectRepository(User)
     private usersRepository: Repository<User>,
-  ) {}
+
+    @InjectRepository(Follow)
+    private followRepository: Repository<Follow>,
+  ) { }
 
   /** 🔹 Mapper: Post Entity → FeedPostDto */
   private toFeedPostDto(post: Post, currentUserId?: number): FeedPostDto {
@@ -33,14 +38,37 @@ export class FeedService {
     };
   }
 
-  /** 🔹 Get public timeline (all posts) with pagination */
   async getPublicTimeline(userId: number, page = 1, limit = 20) {
-    const [posts, total] = await this.postsRepository.findAndCount({
-      relations: ['user', 'comments', 'likes', 'likes.user'],
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
+    const following = await this.followRepository.find({
+      where: { follower: { id: userId } },
+      relations: ['following'],
     });
+    const followingIds = following.map(f => f.following.id);
+
+    // ✅ Explicitly type variables
+    let posts: Post[] = [];
+    let total: number = 0;
+    let source = 'following';
+
+    if (followingIds.length > 0) {
+      [posts, total] = await this.postsRepository.findAndCount({
+        where: { user: { id: In(followingIds) } },
+        relations: ['user', 'comments', 'likes', 'likes.user'],
+        order: { createdAt: 'DESC' },
+        skip: (page - 1) * limit,
+        take: limit,
+      });
+    }
+
+    if (posts.length === 0) {
+      source = 'explore';
+      [posts, total] = await this.postsRepository.findAndCount({
+        relations: ['user', 'comments', 'likes', 'likes.user'],
+        order: { createdAt: 'DESC' },
+        skip: (page - 1) * limit,
+        take: limit,
+      });
+    }
 
     return {
       data: posts.map(post => this.toFeedPostDto(post, userId)),
@@ -49,6 +77,7 @@ export class FeedService {
         page,
         limit,
         hasMore: page * limit < total,
+        source,
       },
     };
   }
